@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Shield, User, Mail, Calendar, Check } from 'lucide-react';
+import { Shield, User, Mail, Check, Loader2 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Label } from './ui/label';
 import {
@@ -11,70 +11,86 @@ import {
 } from './ui/dialog';
 import { User as UserAccount, AVAILABLE_PERMISSIONS, DEFAULT_AGENT_PERMISSIONS } from '../contexts/AuthContext';
 import { toast } from 'sonner';
+import { api } from '../lib/api';
 
 interface ManagePermissionsDialogProps {
   open: boolean;
   onClose: () => void;
   users: UserAccount[];
-  onUpdatePermissions: (userId: string, permissions: string[]) => void;
+  onUpdatePermissions: (userId: string, permissions: string[]) => Promise<void>;
 }
 
-export function ManagePermissionsDialog({ 
-  open, 
-  onClose, 
-  users, 
-  onUpdatePermissions 
+export function ManagePermissionsDialog({
+  open,
+  onClose,
+  users,
+  onUpdatePermissions,
 }: ManagePermissionsDialogProps) {
   const [selectedUser, setSelectedUser] = useState<UserAccount | null>(null);
   const [selectedPermissions, setSelectedPermissions] = useState<string[]>([]);
+  const [loadingUser, setLoadingUser] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
-  const handleUserSelect = (user: UserAccount) => {
+  const handleUserSelect = async (user: UserAccount) => {
     setSelectedUser(user);
-    setSelectedPermissions(user.permissions);
+    setLoadingUser(true);
+    try {
+      // Use the existing /agents/ endpoint which returns permissions_list
+      const res = await api.get<{
+        agents: Array<{ id: string; permissions_list?: string[] }>;
+      }>('/users/agents/');
+      const found = res.agents.find(a => a.id === user.id);
+      setSelectedPermissions(found?.permissions_list ?? []);
+    } catch {
+      setSelectedPermissions(user.permissions ?? []);
+      toast.error('Impossible de charger les permissions actuelles');
+    } finally {
+      setLoadingUser(false);
+    }
   };
 
   const togglePermission = (permissionId: string) => {
-    if (selectedPermissions.includes(permissionId)) {
-      setSelectedPermissions(selectedPermissions.filter(p => p !== permissionId));
-    } else {
-      setSelectedPermissions([...selectedPermissions, permissionId]);
-    }
+    setSelectedPermissions(prev =>
+      prev.includes(permissionId)
+        ? prev.filter(p => p !== permissionId)
+        : [...prev, permissionId]
+    );
   };
 
   const selectAllInCategory = (category: string) => {
-    const categoryPermissions = AVAILABLE_PERMISSIONS
-      .filter(p => p.category === category)
-      .map(p => p.id);
-    
-    const allSelected = categoryPermissions.every(p => selectedPermissions.includes(p));
-    
-    if (allSelected) {
-      setSelectedPermissions(selectedPermissions.filter(p => !categoryPermissions.includes(p)));
-    } else {
-      const newPermissions = [...new Set([...selectedPermissions, ...categoryPermissions])];
-      setSelectedPermissions(newPermissions);
-    }
+    const ids = AVAILABLE_PERMISSIONS.filter(p => p.category === category).map(p => p.id);
+    const allSelected = ids.every(p => selectedPermissions.includes(p));
+    setSelectedPermissions(prev =>
+      allSelected ? prev.filter(p => !ids.includes(p)) : [...new Set([...prev, ...ids])]
+    );
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!selectedUser) return;
-
     if (selectedPermissions.length === 0) {
-      toast.error('Please select at least one permission');
+      toast.error('Veuillez sélectionner au moins une permission');
       return;
     }
-
-    onUpdatePermissions(selectedUser.id, selectedPermissions);
-    toast.success(`Permissions updated for ${selectedUser.name}`);
-    setSelectedUser(null);
-    setSelectedPermissions([]);
+    setIsSaving(true);
+    try {
+      await onUpdatePermissions(selectedUser.id, selectedPermissions);
+      toast.success(`Permissions mises à jour pour ${selectedUser.name}`);
+      setSelectedUser(null);
+      setSelectedPermissions([]);
+    } catch (err: any) {
+      const data = err?.data ?? {};
+      const msg = data.permissions_list
+        ? (Array.isArray(data.permissions_list) ? data.permissions_list[0] : data.permissions_list)
+        : (err?.userMessage ?? 'Erreur lors de la mise à jour');
+      toast.error(msg);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  const groupedPermissions = AVAILABLE_PERMISSIONS.reduce((acc, permission) => {
-    if (!acc[permission.category]) {
-      acc[permission.category] = [];
-    }
-    acc[permission.category].push(permission);
+  const groupedPermissions = AVAILABLE_PERMISSIONS.reduce((acc, p) => {
+    if (!acc[p.category]) acc[p.category] = [];
+    acc[p.category].push(p);
     return acc;
   }, {} as Record<string, typeof AVAILABLE_PERMISSIONS>);
 
@@ -91,9 +107,9 @@ export function ManagePermissionsDialog({
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-[95vw] w-[1600px] max-h-[90vh] overflow-hidden flex flex-col">
         <DialogHeader>
-          <DialogTitle>Manage User Permissions</DialogTitle>
+          <DialogTitle>Gérer les permissions</DialogTitle>
           <DialogDescription>
-            Select a user and customize their permissions
+            Sélectionnez un utilisateur pour modifier ses permissions
           </DialogDescription>
         </DialogHeader>
 
@@ -101,12 +117,12 @@ export function ManagePermissionsDialog({
           {/* User List */}
           <div className="h-[240px] flex flex-col border-b pb-6 overflow-hidden">
             <div className="mb-4">
-              <Label>Select User</Label>
+              <Label>Sélectionner un utilisateur</Label>
               <p className="text-sm text-muted-foreground mt-1">
-                {editableUsers.length} users
+                {editableUsers.length} utilisateurs
               </p>
             </div>
-            
+
             <div className="flex-1 overflow-x-auto overflow-y-hidden">
               <div className="flex gap-3 pb-2">
                 {editableUsers.map((user) => (
@@ -121,8 +137,8 @@ export function ManagePermissionsDialog({
                   >
                     <div className="flex items-start gap-3">
                       <div className={`flex h-10 w-10 items-center justify-center rounded-full shrink-0 ${
-                        user.role === 'manager' 
-                          ? 'bg-purple-100 dark:bg-purple-900' 
+                        user.role === 'manager'
+                          ? 'bg-purple-100 dark:bg-purple-900'
                           : 'bg-blue-100 dark:bg-blue-900'
                       }`}>
                         <User className={`h-5 w-5 ${
@@ -145,9 +161,6 @@ export function ManagePermissionsDialog({
                           }`}>
                             {user.role}
                           </span>
-                          <span className="text-xs text-muted-foreground">
-                            {user.permissions.length} permissions
-                          </span>
                         </div>
                       </div>
                     </div>
@@ -161,7 +174,6 @@ export function ManagePermissionsDialog({
           <div className="flex-1 flex flex-col overflow-hidden">
             {selectedUser ? (
               <>
-                {/* Selected User Info */}
                 <div className="p-4 bg-muted rounded-lg mb-4">
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-3">
@@ -182,98 +194,96 @@ export function ManagePermissionsDialog({
                       </div>
                     </div>
                     <div className="text-right">
-                      <p className="text-sm font-medium">{selectedPermissions.length} permissions</p>
-                      <p className="text-xs text-muted-foreground capitalize">{selectedUser.role}</p>
+                      {loadingUser ? (
+                        <Loader2 className="h-4 w-4 animate-spin ml-auto" />
+                      ) : (
+                        <>
+                          <p className="text-sm font-medium">{selectedPermissions.length} permissions</p>
+                          <p className="text-xs text-muted-foreground capitalize">{selectedUser.role}</p>
+                        </>
+                      )}
                     </div>
                   </div>
 
-                  {/* Quick Selection */}
                   <div className="flex gap-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
+                    <Button type="button" size="sm" variant="outline"
                       onClick={() => setSelectedPermissions(DEFAULT_AGENT_PERMISSIONS)}
-                    >
-                      Default Agent
+                      disabled={loadingUser}>
+                      Agent par défaut
                     </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
+                    <Button type="button" size="sm" variant="outline"
                       onClick={() => setSelectedPermissions(AVAILABLE_PERMISSIONS.map(p => p.id))}
-                    >
-                      All Permissions
+                      disabled={loadingUser}>
+                      Tout sélectionner
                     </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
+                    <Button type="button" size="sm" variant="outline"
                       onClick={() => setSelectedPermissions([])}
-                    >
-                      Clear All
+                      disabled={loadingUser}>
+                      Tout effacer
                     </Button>
                   </div>
                 </div>
 
-                {/* Permissions List */}
-                <div className="flex-1 overflow-y-auto space-y-6 pr-2">
-                  {Object.entries(groupedPermissions).map(([category, permissions]) => (
-                    <div key={category} className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <h4 className="font-medium text-sm">{categoryLabels[category]}</h4>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => selectAllInCategory(category)}
-                          className="h-auto py-1 text-xs"
-                        >
-                          {permissions.every(p => selectedPermissions.includes(p.id)) ? 'Deselect All' : 'Select All'}
-                        </Button>
-                      </div>
-                      
-                      <div className="grid gap-2">
-                        {permissions.map((permission) => (
-                          <label
-                            key={permission.id}
-                            className="flex items-start gap-3 p-3 rounded-lg border cursor-pointer hover:bg-accent transition-colors"
+                {loadingUser ? (
+                  <div className="flex-1 flex items-center justify-center">
+                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                  </div>
+                ) : (
+                  <div className="flex-1 overflow-y-auto space-y-6 pr-2">
+                    {Object.entries(groupedPermissions).map(([category, permissions]) => (
+                      <div key={category} className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <h4 className="font-medium text-sm">{categoryLabels[category]}</h4>
+                          <Button
+                            type="button" size="sm" variant="ghost"
+                            onClick={() => selectAllInCategory(category)}
+                            className="h-auto py-1 text-xs"
                           >
-                            <div className="flex items-center h-5">
-                              <input
-                                type="checkbox"
-                                checked={selectedPermissions.includes(permission.id)}
-                                onChange={() => togglePermission(permission.id)}
-                                className="h-4 w-4 rounded border-gray-300"
-                              />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="font-medium text-sm">{permission.label}</div>
-                              <div className="text-xs text-muted-foreground mt-0.5">
-                                {permission.description}
+                            {permissions.every(p => selectedPermissions.includes(p.id))
+                              ? 'Tout désélectionner'
+                              : 'Tout sélectionner'}
+                          </Button>
+                        </div>
+                        <div className="grid gap-2">
+                          {permissions.map((permission) => (
+                            <label
+                              key={permission.id}
+                              className="flex items-start gap-3 p-3 rounded-lg border cursor-pointer hover:bg-accent transition-colors"
+                            >
+                              <div className="flex items-center h-5">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedPermissions.includes(permission.id)}
+                                  onChange={() => togglePermission(permission.id)}
+                                  className="h-4 w-4 rounded border-gray-300"
+                                />
                               </div>
-                            </div>
-                            {selectedPermissions.includes(permission.id) && (
-                              <Check className="h-4 w-4 text-green-600 shrink-0" />
-                            )}
-                          </label>
-                        ))}
+                              <div className="flex-1 min-w-0">
+                                <div className="font-medium text-sm">{permission.label}</div>
+                                <div className="text-xs text-muted-foreground mt-0.5">
+                                  {permission.description}
+                                </div>
+                              </div>
+                              {selectedPermissions.includes(permission.id) && (
+                                <Check className="h-4 w-4 text-green-600 shrink-0" />
+                              )}
+                            </label>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
 
-                {/* Action Buttons */}
                 <div className="flex justify-end gap-2 pt-4 border-t mt-4">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={onClose}
-                  >
-                    Cancel
+                  <Button type="button" variant="outline" onClick={onClose} disabled={isSaving}>
+                    Annuler
                   </Button>
-                  <Button onClick={handleSave}>
-                    Save Permissions
+                  <Button onClick={handleSave} disabled={isSaving || loadingUser}>
+                    {isSaving
+                      ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Enregistrement...</>
+                      : 'Sauvegarder'
+                    }
                   </Button>
                 </div>
               </>
@@ -283,9 +293,9 @@ export function ManagePermissionsDialog({
                   <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted mx-auto mb-4">
                     <Shield className="h-8 w-8 text-muted-foreground" />
                   </div>
-                  <p className="font-medium">Select a user</p>
+                  <p className="font-medium">Sélectionnez un utilisateur</p>
                   <p className="text-sm text-muted-foreground mt-1">
-                    Choose a user from the list to manage their permissions
+                    Choisissez un utilisateur pour gérer ses permissions
                   </p>
                 </div>
               </div>

@@ -1,4 +1,6 @@
-import { createContext, useContext, useState, ReactNode, useEffect } from 'react';
+import { createContext, useContext, useState, ReactNode, useEffect, useCallback } from 'react';
+import { authApi, BackendUser, type UserListItem } from '../lib/authApi';
+import { TokenStorage, ApiError } from '../lib/api';
 
 export type UserRole = 'admin' | 'manager' | 'agent';
 
@@ -10,51 +12,32 @@ export interface Permission {
 }
 
 export const AVAILABLE_PERMISSIONS: Permission[] = [
-  // Data Management
-  { id: 'import-data', label: 'Import Data', description: 'Import Excel files into the database', category: 'data' },
-  { id: 'export-data', label: 'Export Data', description: 'Export data to Excel/CSV files', category: 'data' },
-  
-  // Analytics & Reports
-  { id: 'view-dashboard', label: 'View Dashboard', description: 'Access main dashboard with KPIs', category: 'analytics' },
-  { id: 'view-reports', label: 'View Reports', description: 'Access and view all reports', category: 'analytics' },
-  { id: 'generate-reports', label: 'Generate Reports', description: 'Create and generate custom reports', category: 'analytics' },
-  { id: 'view-kpi', label: 'View KPIs', description: 'Access KPI Engine and metrics', category: 'analytics' },
-  { id: 'filter-dashboard', label: 'Filter Dashboard', description: 'Apply filters to dashboard data', category: 'analytics' },
-  
-  // Sales & Inventory
-  { id: 'view-sales', label: 'View Sales', description: 'Access sales and purchases data', category: 'sales' },
-  { id: 'view-inventory', label: 'View Inventory', description: 'Check product availability and stock levels', category: 'sales' },
-  { id: 'view-customer-payments', label: 'View Customer Payments', description: 'Access customer payment history', category: 'sales' },
-  { id: 'view-aging', label: 'View Aging Receivables', description: 'Track overdue payments and receivables', category: 'sales' },
-  
-  // System & Alerts
-  { id: 'receive-notifications', label: 'Receive Notifications', description: 'Get notified about important events', category: 'system' },
-  { id: 'manage-alerts', label: 'Manage Alerts', description: 'Mark alerts as resolved', category: 'system' },
-  { id: 'view-profile', label: 'View Profile', description: 'Access personal profile', category: 'system' },
-  { id: 'change-password', label: 'Change Password', description: 'Update account password', category: 'system' },
-  { id: 'ai-insights', label: 'AI Insights', description: 'Access AI-powered insights and chat', category: 'analytics' },
+  { id: 'import-data',            label: 'Import Data',             description: 'Import Excel files into the database',        category: 'data' },
+  { id: 'export-data',            label: 'Export Data',             description: 'Export data to Excel/CSV files',              category: 'data' },
+  { id: 'view-dashboard',         label: 'View Dashboard',          description: 'Access main dashboard with KPIs',             category: 'analytics' },
+  { id: 'view-reports',           label: 'View Reports',            description: 'Access and view all reports',                 category: 'analytics' },
+  { id: 'generate-reports',       label: 'Generate Reports',        description: 'Create and generate custom reports',          category: 'analytics' },
+  { id: 'view-kpi',               label: 'View KPIs',               description: 'Access KPI Engine and metrics',               category: 'analytics' },
+  { id: 'filter-dashboard',       label: 'Filter Dashboard',        description: 'Apply filters to dashboard data',             category: 'analytics' },
+  { id: 'view-sales',             label: 'View Sales',              description: 'Access sales and purchases data',             category: 'sales' },
+  { id: 'view-inventory',         label: 'View Inventory',          description: 'Check product availability and stock levels', category: 'sales' },
+  { id: 'view-customer-payments', label: 'View Customer Payments',  description: 'Access customer payment history',             category: 'sales' },
+  { id: 'view-aging',             label: 'View Aging Receivables',  description: 'Track overdue payments and receivables',      category: 'sales' },
+  { id: 'receive-notifications',  label: 'Receive Notifications',   description: 'Get notified about important events',         category: 'system' },
+  { id: 'manage-alerts',          label: 'Manage Alerts',           description: 'Mark alerts as resolved',                    category: 'system' },
+  { id: 'view-profile',           label: 'View Profile',            description: 'Access personal profile',                    category: 'system' },
+  { id: 'change-password',        label: 'Change Password',         description: 'Update account password',                    category: 'system' },
+  { id: 'ai-insights',            label: 'AI Insights',             description: 'Access AI-powered insights and chat',         category: 'analytics' },
 ];
 
-// Default permissions for each role
-export const DEFAULT_AGENT_PERMISSIONS = [
-  'import-data',
-  'view-dashboard',
-  'view-reports',
-  'generate-reports',
-  'view-kpi',
-  'filter-dashboard',
-  'view-sales',
-  'view-inventory',
-  'view-customer-payments',
-  'receive-notifications',
-  'manage-alerts',
-  'view-profile',
-  'change-password',
+export const DEFAULT_AGENT_PERMISSIONS: string[] = [
+  'import-data', 'view-dashboard', 'view-reports', 'generate-reports',
+  'view-kpi', 'filter-dashboard', 'view-sales', 'view-inventory',
+  'view-customer-payments', 'receive-notifications', 'manage-alerts',
+  'view-profile', 'change-password',
 ];
 
-export const DEFAULT_MANAGER_PERMISSIONS = [
-  ...AVAILABLE_PERMISSIONS.map(p => p.id),
-];
+export const DEFAULT_MANAGER_PERMISSIONS: string[] = AVAILABLE_PERMISSIONS.map(p => p.id);
 
 export interface User {
   id: string;
@@ -64,232 +47,243 @@ export interface User {
   permissions: string[];
   isVerified: boolean;
   createdAt: string;
+  mustChangePassword?: boolean;
+  branchId?: string | null;
+  branchName?: string | null;
+  companyId?: string | null;
+  companyName?: string | null;
+}
+
+function mapBackendUser(backendUser: BackendUser): User {
+  return {
+    id: backendUser.id,
+    name: backendUser.full_name || `${backendUser.first_name} ${backendUser.last_name}`.trim(),
+    email: backendUser.email,
+    role: backendUser.role,
+    permissions: backendUser.permissions_list,
+    isVerified: backendUser.is_verified,
+    createdAt: backendUser.created_at,
+    mustChangePassword: backendUser.must_change_password,
+    branchId: backendUser.branch,
+    branchName: backendUser.branch_name,
+    companyId: backendUser.company,
+    companyName: backendUser.company_name,
+  };
+}
+
+function mapListItem(item: UserListItem): User {
+  return {
+    id: item.id,
+    name: item.full_name,
+    email: item.email,
+    role: item.role as UserRole,
+    permissions: item.permissions_list ?? [],
+    isVerified: item.status !== 'pending',
+    createdAt: item.created_at,
+    branchName: item.branch_name,
+    companyId: item.company,
+    companyName: item.company_name,
+  };
+}
+
+interface SignupData {
+  name: string;
+  email: string;
+  password: string;
+  role: UserRole;
+  companyName: string;
+  phone?: string;
 }
 
 interface AuthContextType {
   user: User | null;
   users: User[];
+  isLoading: boolean;
   login: (email: string, password: string) => Promise<{ success: boolean; message: string }>;
-  signup: (userData: { name: string; email: string; password: string; role: UserRole }) => Promise<{ success: boolean; message: string }>;
-  logout: () => void;
-  verifyManager: (userId: string) => void;
-  rejectManager: (userId: string) => void;
-  updateUserPermissions: (userId: string, permissions: string[]) => void;
-  createAgent: (userData: { name: string; email: string; role: string; permissions: string[] }) => void;
+  signup: (userData: SignupData) => Promise<{ success: boolean; message: string }>;
+  logout: () => Promise<void>;
+  verifyManager: (userId: string) => Promise<void>;
+  rejectManager: (userId: string, reason?: string) => Promise<void>;
+  createAgent: (userData: {
+    name: string;
+    email: string;
+    role: string;
+    permissions: string[];
+    branchId?: string;
+    tempPassword?: string;
+  }) => Promise<void>;
+  updateUserPermissions: (userId: string, permissions: string[]) => Promise<void>;
+  refreshProfile: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Mock password storage (in production, use proper backend with hashed passwords)
-const mockPasswords: Record<string, string> = {
-  'admin@fasi.com': 'admin123',
-  'john@company.com': 'manager123',
-  'sarah@company.com': 'agent123',
-};
+async function fetchUserList(role: UserRole, setUsers: (u: User[]) => void) {
+  try {
+    if (role === 'admin') {
+      const res = await authApi.getAllUsers();
+      setUsers(res.users.map(mapListItem));
+    } else if (role === 'manager') {
+      const res = await authApi.getAgents();
+      setUsers(res.agents.map(mapListItem));
+    }
+  } catch {
+    // non-critical
+  }
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  // Initialize with default users
-  const getInitialUsers = (): User[] => {
-    const savedUsers = localStorage.getItem('fasi_users');
-    if (savedUsers) {
-      try {
-        return JSON.parse(savedUsers);
-      } catch (e) {
-        console.error('Failed to parse saved users', e);
+  const [user, setUser] = useState<User | null>(() => {
+    try {
+      const saved = localStorage.getItem('fasi_user');
+      return saved ? JSON.parse(saved) : null;
+    } catch { return null; }
+  });
+  const [users, setUsers] = useState<User[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    if (user) localStorage.setItem('fasi_user', JSON.stringify(user));
+    else localStorage.removeItem('fasi_user');
+  }, [user]);
+
+  useEffect(() => {
+    const token = TokenStorage.getAccess();
+    if (!token) return;
+
+    authApi.getProfile()
+      .then(async profile => {
+        const mappedUser = mapBackendUser(profile);
+        setUser(mappedUser);
+        await fetchUserList(mappedUser.role, setUsers);
+      })
+      .catch(() => {
+        TokenStorage.clear();
+        setUser(null);
+      });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── LOGIN ──────────────────────────────────────────────────────────────
+  const login = async (email: string, password: string): Promise<{ success: boolean; message: string }> => {
+    setIsLoading(true);
+    try {
+      const response = await authApi.login({ email, password });
+      TokenStorage.setTokens(response.access, response.refresh);
+      const profile = await authApi.getProfile();
+      const mappedUser = mapBackendUser(profile);
+      setUser(mappedUser);
+      await fetchUserList(mappedUser.role, setUsers);
+      return { success: true, message: 'Connexion réussie' };
+    } catch (err) {
+      TokenStorage.clear();
+      if (err instanceof ApiError) {
+        if (err.status === 401) return { success: false, message: 'Email ou mot de passe incorrect' };
+        if (err.status === 403) return { success: false, message: 'Votre compte est en attente de validation' };
+        return { success: false, message: err.userMessage };
       }
+      return { success: false, message: 'Erreur de connexion' };
+    } finally {
+      setIsLoading(false);
     }
-    // Return default users
-    return [
-      {
-        id: '1',
-        name: 'Admin FASI',
-        email: 'admin@fasi.com',
-        role: 'admin',
-        permissions: ['all'],
-        isVerified: true,
-        createdAt: new Date().toISOString(),
-      },
-      {
-        id: '2',
-        name: 'John Manager',
-        email: 'john@company.com',
-        role: 'manager',
-        permissions: DEFAULT_MANAGER_PERMISSIONS,
-        isVerified: true,
-        createdAt: new Date().toISOString(),
-      },
-      {
-        id: '3',
-        name: 'Sarah Agent',
-        email: 'sarah@company.com',
-        role: 'agent',
-        permissions: DEFAULT_AGENT_PERMISSIONS,
-        isVerified: true,
-        createdAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-      },
-    ];
   };
 
-  const [user, setUser] = useState<User | null>(() => {
-    const savedUser = localStorage.getItem('fasi_user');
-    if (savedUser) {
-      try {
-        return JSON.parse(savedUser);
-      } catch (e) {
-        console.error('Failed to parse saved user', e);
-      }
+  // ── SIGNUP ─────────────────────────────────────────────────────────────
+  const signup = async (userData: SignupData): Promise<{ success: boolean; message: string }> => {
+    if (userData.role !== 'manager') {
+      return { success: false, message: "Seuls les managers peuvent s'inscrire via ce formulaire" };
     }
-    return null;
-  });
-
-  const [users, setUsers] = useState<User[]>(getInitialUsers);
-
-  // Load passwords from localStorage on mount
-  useEffect(() => {
-    const savedPasswords = localStorage.getItem('fasi_passwords');
-    if (savedPasswords) {
-      try {
-        Object.assign(mockPasswords, JSON.parse(savedPasswords));
-      } catch (e) {
-        console.error('Failed to parse saved passwords', e);
-      }
-    } else {
-      // Initialize default passwords
-      localStorage.setItem('fasi_passwords', JSON.stringify(mockPasswords));
+    if (!userData.companyName?.trim()) {
+      return { success: false, message: 'Le nom de la société est obligatoire.' };
     }
+    setIsLoading(true);
+    try {
+      const nameParts = userData.name.trim().split(' ');
+      const first_name = nameParts[0] || userData.name;
+      const last_name = nameParts.slice(1).join(' ') || first_name; // fallback: repeat first name
+      await authApi.managerSignup({
+        email: userData.email,
+        first_name,
+        last_name,
+        phone_number: userData.phone,
+        company_name: userData.companyName.trim(),
+        password: userData.password,
+        password_confirm: userData.password,
+      });
+      return { success: true, message: "Compte créé ! En attente de vérification par l'admin." };
+    } catch (err) {
+      return { success: false, message: err instanceof ApiError ? err.userMessage : "Erreur lors de l'inscription" };
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const logout = async () => {
+    await authApi.logout();
+    setUser(null);
+    setUsers([]);
+  };
+
+  const verifyManager = async (userId: string) => {
+    await authApi.reviewManager(userId, { action: 'approve' });
+    setUsers(prev => prev.map(u => u.id === userId ? { ...u, isVerified: true } : u));
+  };
+
+  const rejectManager = async (userId: string, reason = 'Demande rejetée') => {
+    await authApi.reviewManager(userId, { action: 'reject', reason });
+    setUsers(prev => prev.filter(u => u.id !== userId));
+  };
+
+  // ── CREATE AGENT ───────────────────────────────────────────────────────
+  const createAgent = async (userData: {
+    name: string;
+    email: string;
+    role: string;
+    permissions: string[];
+    branchId?: string;
+    tempPassword?: string;
+  }) => {
+    const nameParts = userData.name.trim().split(' ');
+    const first_name = nameParts[0] || userData.name;
+    const last_name = nameParts.slice(1).join(' ') || first_name; // ← fix: never send empty string
+
+    const payload = {
+      email: userData.email,
+      first_name,
+      last_name,
+      ...(userData.branchId ? { branch: userData.branchId } : {}),
+      permissions_list: userData.permissions,
+      temporary_password: userData.tempPassword || 'Agent@123456',
+    };
+
+    try {
+      const res = await authApi.createAgent(payload);
+      setUsers(prev => [...prev, mapListItem(res.agent)]);
+    } catch (err) {
+      console.error('[createAgent] Erreur →', (err as { data?: unknown })?.data ?? err);
+      throw err;
+    }
+  };
+
+  const updateUserPermissions = async (userId: string, permissions: string[]) => {
+    await authApi.updatePermissions(userId, permissions);
+    setUsers(prev => prev.map(u => u.id === userId ? { ...u, permissions } : u));
+    if (user?.id === userId) setUser({ ...user, permissions });
+  };
+
+  const refreshProfile = useCallback(async () => {
+    try {
+      const profile = await authApi.getProfile();
+      setUser(mapBackendUser(profile));
+    } catch { /* ignore */ }
   }, []);
 
-  // Save users to localStorage whenever they change
-  useEffect(() => {
-    localStorage.setItem('fasi_users', JSON.stringify(users));
-  }, [users]);
-
-  const login = async (email: string, password: string): Promise<{ success: boolean; message: string }> => {
-    // Simulate API call delay
-    await new Promise(resolve => setTimeout(resolve, 500));
-
-    const foundUser = users.find(u => u.email === email);
-
-    if (!foundUser) {
-      return { success: false, message: 'User not found' };
-    }
-
-    if (mockPasswords[email] !== password) {
-      return { success: false, message: 'Invalid password' };
-    }
-
-    if (foundUser.role === 'manager' && !foundUser.isVerified) {
-      return { success: false, message: 'Your account is pending admin verification' };
-    }
-
-    setUser(foundUser);
-    localStorage.setItem('fasi_user', JSON.stringify(foundUser));
-    return { success: true, message: 'Login successful' };
-  };
-
-  const signup = async (userData: { name: string; email: string; password: string; role: UserRole }): Promise<{ success: boolean; message: string }> => {
-    // Simulate API call delay
-    await new Promise(resolve => setTimeout(resolve, 500));
-
-    // Check if email already exists
-    if (users.find(u => u.email === userData.email)) {
-      return { success: false, message: 'Email already registered' };
-    }
-
-    // Only allow manager signup (admin and agents are created by managers/admins)
-    if (userData.role !== 'manager') {
-      return { success: false, message: 'Invalid role for signup' };
-    }
-
-    const newUser: User = {
-      id: Date.now().toString(),
-      name: userData.name,
-      email: userData.email,
-      role: userData.role,
-      permissions: [],
-      isVerified: false, // Manager accounts need admin verification
-      createdAt: new Date().toISOString(),
-    };
-
-    // Store password
-    mockPasswords[userData.email] = userData.password;
-    localStorage.setItem('fasi_passwords', JSON.stringify(mockPasswords));
-
-    setUsers([...users, newUser]);
-    return { success: true, message: 'Account created successfully! Please wait for admin verification.' };
-  };
-
-  const logout = () => {
-    setUser(null);
-    localStorage.removeItem('fasi_user');
-  };
-
-  const verifyManager = (userId: string) => {
-    setUsers(users.map(u => 
-      u.id === userId 
-        ? { 
-            ...u, 
-            isVerified: true,
-            permissions: ['dashboard', 'reports', 'kpi', 'sales', 'inventory', 'aging', 'ai-insights']
-          } 
-        : u
-    ));
-  };
-
-  const rejectManager = (userId: string) => {
-    setUsers(users.filter(u => u.id !== userId));
-    // Remove password
-    const rejectedUser = users.find(u => u.id === userId);
-    if (rejectedUser) {
-      delete mockPasswords[rejectedUser.email];
-      localStorage.setItem('fasi_passwords', JSON.stringify(mockPasswords));
-    }
-  };
-
-  const updateUserPermissions = (userId: string, permissions: string[]) => {
-    setUsers(users.map(u => 
-      u.id === userId ? { ...u, permissions } : u
-    ));
-    
-    // Update current user if they're the one being modified
-    if (user?.id === userId) {
-      const updatedUser = { ...user, permissions };
-      setUser(updatedUser);
-      localStorage.setItem('fasi_user', JSON.stringify(updatedUser));
-    }
-  };
-
-  const createAgent = (userData: { name: string; email: string; role: string; permissions: string[] }) => {
-    // Generate a default password for the agent
-    const defaultPassword = 'agent123';
-    
-    const newAgent: User = {
-      id: Date.now().toString(),
-      name: userData.name,
-      email: userData.email,
-      role: 'agent',
-      permissions: userData.permissions,
-      isVerified: true,
-      createdAt: new Date().toISOString(),
-    };
-
-    mockPasswords[userData.email] = defaultPassword;
-    localStorage.setItem('fasi_passwords', JSON.stringify(mockPasswords));
-
-    setUsers([...users, newAgent]);
-  };
-
   return (
-    <AuthContext.Provider value={{ 
-      user, 
-      users, 
-      login, 
-      signup, 
-      logout, 
-      verifyManager, 
-      rejectManager,
-      updateUserPermissions,
-      createAgent,
+    <AuthContext.Provider value={{
+      user, users, isLoading,
+      login, signup, logout,
+      verifyManager, rejectManager,
+      createAgent, updateUserPermissions,
+      refreshProfile,
     }}>
       {children}
     </AuthContext.Provider>
@@ -298,8 +292,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 export function useAuth() {
   const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
+  if (context === undefined) throw new Error('useAuth must be used within an AuthProvider');
   return context;
 }

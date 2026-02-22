@@ -12,6 +12,7 @@ import {
 } from './ui/dropdown-menu';
 import { useTheme } from 'next-themes';
 import { useState } from 'react';
+import { toast } from 'sonner';
 import { CreateUserDialog } from './CreateUserDialog';
 import { ManagePermissionsDialog } from './ManagePermissionsDialog';
 import { useAuth } from '../contexts/AuthContext';
@@ -26,22 +27,26 @@ interface UserAccountData {
   email: string;
   role: string;
   permissions: string[];
+  branchId?: string;
+  tempPassword?: string;
 }
 
 export function Header({ onMenuClick }: HeaderProps) {
   const { theme, setTheme } = useTheme();
   const { user, users, logout, createAgent, updateUserPermissions } = useAuth();
   const navigate = useNavigate();
-  const alertCount = 6; // Mock alert count
+  const alertCount = 6;
   const [createUserOpen, setCreateUserOpen] = useState(false);
   const [managePermissionsOpen, setManagePermissionsOpen] = useState(false);
 
-  const handleCreateUser = (userData: UserAccountData) => {
-    createAgent(userData);
+  const handleCreateUser = async (userData: UserAccountData): Promise<void> => {
+    await createAgent(userData);
+    toast.success('Agent créé avec succès');
   };
 
-  const handleUpdatePermissions = (userId: string, permissions: string[]) => {
-    updateUserPermissions(userId, permissions);
+  // ← async now, matches Promise<void> expected by ManagePermissionsDialog
+  const handleUpdatePermissions = async (userId: string, permissions: string[]): Promise<void> => {
+    await updateUserPermissions(userId, permissions);
   };
 
   const handleLogout = () => {
@@ -198,14 +203,12 @@ export function Header({ onMenuClick }: HeaderProps) {
         </div>
       </header>
 
-      {/* Create User Dialog */}
       <CreateUserDialog
         open={createUserOpen}
         onClose={() => setCreateUserOpen(false)}
         onCreateUser={handleCreateUser}
       />
 
-      {/* Manage Permissions Dialog */}
       <ManagePermissionsDialog
         open={managePermissionsOpen}
         onClose={() => setManagePermissionsOpen(false)}

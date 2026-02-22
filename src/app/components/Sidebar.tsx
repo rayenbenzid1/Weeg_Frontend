@@ -46,7 +46,7 @@ export function Sidebar({ currentPage, onNavigate, isOpen, onClose }: SidebarPro
   // Helper function to check if user has permission
   const hasPermission = (permission: string) => {
     if (!user) return false;
-    if (user.role === 'admin' || user.role === 'manager') return true; // Admins and managers have all permissions
+    if (user.role === 'manager') return true; //managers have all permissions
     return user.permissions.includes(permission);
   };
 

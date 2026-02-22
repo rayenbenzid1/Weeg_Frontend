@@ -4,48 +4,24 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Link, useNavigate } from 'react-router';
-import { Eye, EyeOff, LogIn, RefreshCw } from 'lucide-react';
+import { Eye, EyeOff, LogIn } from 'lucide-react';
 import { toast } from 'sonner';
 
 export function LoginPage() {
-  const { login } = useAuth();
+  const { login, isLoading } = useAuth();
   const navigate = useNavigate();
-  const [formData, setFormData] = useState({
-    email: '',
-    password: '',
-  });
+  const [formData, setFormData] = useState({ email: '', password: '' });
   const [showPassword, setShowPassword] = useState(false);
-  const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
-
-    try {
-      const result = await login(formData.email, formData.password);
-      
-      if (result.success) {
-        toast.success(result.message);
-        navigate('/dashboard');
-      } else {
-        toast.error(result.message);
-      }
-    } catch (error) {
-      toast.error('An error occurred during login');
-    } finally {
-      setLoading(false);
+    const result = await login(formData.email, formData.password);
+    if (result.success) {
+      toast.success('Connexion réussie');
+      navigate('/dashboard');
+    } else {
+      toast.error(result.message);
     }
-  };
-
-  const handleResetDemoData = () => {
-    // Clear all localStorage data
-    localStorage.removeItem('fasi_user');
-    localStorage.removeItem('fasi_users');
-    localStorage.removeItem('fasi_passwords');
-    toast.success('Demo data reset! Please refresh the page.');
-    setTimeout(() => {
-      window.location.reload();
-    }, 1000);
   };
 
   return (
@@ -59,46 +35,44 @@ export function LoginPage() {
           <h1 className="text-3xl font-bold bg-gradient-to-r from-indigo-600 to-violet-600 bg-clip-text text-transparent">
             FASI
           </h1>
-          <p className="text-muted-foreground mt-2">
-            Financial Analytics & System Intelligence
-          </p>
+          <p className="text-muted-foreground mt-2">Financial Analytics & System Intelligence</p>
         </div>
 
         {/* Login Form */}
         <div className="bg-background border rounded-2xl shadow-xl p-8">
           <div className="mb-6">
-            <h2 className="text-2xl font-bold">Welcome Back</h2>
-            <p className="text-muted-foreground text-sm mt-1">
-              Sign in to your account
-            </p>
+            <h2 className="text-2xl font-bold">Bienvenue</h2>
+            <p className="text-muted-foreground text-sm mt-1">Connectez-vous à votre compte</p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="email">Email Address</Label>
+              <Label htmlFor="email">Adresse email</Label>
               <Input
                 id="email"
                 type="email"
-                placeholder="Enter your email"
+                placeholder="votre@email.com"
                 value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                onChange={e => setFormData({ ...formData, email: e.target.value })}
                 required
-                disabled={loading}
+                disabled={isLoading}
+                autoComplete="email"
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
+              <Label htmlFor="password">Mot de passe</Label>
               <div className="relative">
                 <Input
                   id="password"
                   type={showPassword ? 'text' : 'password'}
-                  placeholder="Enter your password"
+                  placeholder="••••••••"
                   value={formData.password}
-                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                  onChange={e => setFormData({ ...formData, password: e.target.value })}
                   required
-                  disabled={loading}
+                  disabled={isLoading}
                   className="pr-10"
+                  autoComplete="current-password"
                 />
                 <button
                   type="button"
@@ -110,48 +84,25 @@ export function LoginPage() {
               </div>
             </div>
 
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? (
+            <Button type="submit" className="w-full" disabled={isLoading}>
+              {isLoading ? (
                 <span className="flex items-center gap-2">
                   <span className="animate-spin">⏳</span>
-                  Signing in...
+                  Connexion en cours...
                 </span>
               ) : (
                 <span className="flex items-center gap-2">
                   <LogIn className="h-4 w-4" />
-                  Sign In
+                  Se connecter
                 </span>
               )}
             </Button>
           </form>
-
-          {/* Demo Credentials */}
-          <div className="mt-6 p-4 bg-muted/50 rounded-lg">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-xs font-medium">Demo Credentials:</p>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={handleResetDemoData}
-                className="h-auto py-1 text-xs"
-              >
-                <RefreshCw className="h-3 w-3 mr-1" />
-                Reset Data
-              </Button>
-            </div>
-            <div className="space-y-1 text-xs text-muted-foreground">
-              <p>Admin: admin@fasi.com / admin123</p>
-              <p>Manager: john@company.com / manager123</p>
-              <p>Agent: sarah@company.com / agent123</p>
-            </div>
-          </div>
-
           {/* Sign Up Link */}
           <div className="mt-6 text-center text-sm">
-            <span className="text-muted-foreground">Don't have an account? </span>
+            <span className="text-muted-foreground">Pas de compte ? </span>
             <Link to="/signup" className="text-indigo-600 hover:text-indigo-700 font-medium">
-              Sign up as Manager
+              Inscription Manager
             </Link>
           </div>
         </div>
