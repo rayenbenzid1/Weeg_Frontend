@@ -1,12 +1,24 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { ApiError } from './api';
 import {
-  productsApi, branchesApi, customersApi, transactionsApi, inventoryApi,
-  kpiApi, alertsApi, agingApi,
-  type Product, type Branch, type Customer, type Sale, type Purchase,
-  type InventoryItem, type KPIData, type MonthlySalesData, type Alert,
-  type AgingReceivable, type AgingDistribution, type TopProduct,
-  type BranchPerformance, type PaginatedResponse, type QueryParams,
+  productsApi,
+  customersApi,
+  inventoryApi,
+  transactionsApi,
+  agingApi,
+  kpiApi,
+  type Product,
+  type Customer,
+  type InventoryItem,
+  type Movement,
+  type AgingRecord,
+  type AgingRiskItem,
+  type AgingDistributionItem,
+  type MonthlySummaryItem,
+  type BranchSummary,
+  type CategoryBreakdown,
+  type KPIData,
+  type QueryParams,
 } from './dataApi';
 
 // ─────────────────────────────────────────────
@@ -37,12 +49,16 @@ function useAsync<T>(
       if (mountedRef.current) setData(result);
     } catch (err) {
       if (mountedRef.current) {
-        setError(err instanceof ApiError ? err.userMessage : String(err));
+        if (err instanceof ApiError) {
+          setError(err.userMessage);
+        } else {
+          setError(String(err));
+        }
       }
     } finally {
       if (mountedRef.current) setLoading(false);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
 
   useEffect(() => {
@@ -58,142 +74,146 @@ function useAsync<T>(
 // Products
 // ─────────────────────────────────────────────
 
-export function useProducts(params?: QueryParams) {
-  return useAsync<PaginatedResponse<Product>>(
-    () => productsApi.list(params),
-    [JSON.stringify(params)]
-  );
+export function useProducts(params?: QueryParams & { category?: string }) {
+  return useAsync(() => productsApi.list(params), [JSON.stringify(params)]);
 }
 
-export function useProduct(id: string) {
-  return useAsync<Product>(
-    () => productsApi.get(id),
+export function useProduct(id: string | null) {
+  return useAsync(
+    () => (id ? productsApi.get(id) : Promise.resolve(null as any)),
     [id]
   );
 }
 
-// ─────────────────────────────────────────────
-// Branches
-// ─────────────────────────────────────────────
-
-export function useBranches() {
-  return useAsync<PaginatedResponse<Branch>>(
-    () => branchesApi.list(),
-    []
-  );
+export function useProductCategories() {
+  return useAsync(() => productsApi.categories(), []);
 }
 
 // ─────────────────────────────────────────────
 // Customers
 // ─────────────────────────────────────────────
 
-export function useCustomers(params?: QueryParams) {
-  return useAsync<PaginatedResponse<Customer>>(
-    () => customersApi.list(params),
-    [JSON.stringify(params)]
-  );
-}
-
-// ─────────────────────────────────────────────
-// Sales & Purchases
-// ─────────────────────────────────────────────
-
-export function useSales(params?: QueryParams) {
-  return useAsync<PaginatedResponse<Sale>>(
-    () => transactionsApi.listSales(params),
-    [JSON.stringify(params)]
-  );
-}
-
-export function usePurchases(params?: QueryParams) {
-  return useAsync<PaginatedResponse<Purchase>>(
-    () => transactionsApi.listPurchases(params),
-    [JSON.stringify(params)]
-  );
+export function useCustomers(params?: QueryParams & { area_code?: string }) {
+  return useAsync(() => customersApi.list(params), [JSON.stringify(params)]);
 }
 
 // ─────────────────────────────────────────────
 // Inventory
 // ─────────────────────────────────────────────
 
-export function useInventory(params?: QueryParams) {
-  return useAsync<PaginatedResponse<InventoryItem>>(
-    () => inventoryApi.list(params),
+export function useInventory(params?: QueryParams & { snapshot_date?: string; category?: string }) {
+  return useAsync(() => inventoryApi.list(params), [JSON.stringify(params)]);
+}
+
+export function useInventoryDates() {
+  return useAsync(() => inventoryApi.dates(), []);
+}
+
+export function useBranchSummary(params?: { snapshot_date?: string; category?: string }) {
+  return useAsync(
+    () => inventoryApi.branchSummary(params),
+    [JSON.stringify(params)]
+  );
+}
+
+export function useCategoryBreakdown(params?: { snapshot_date?: string }) {
+  return useAsync(
+    () => inventoryApi.categoryBreakdown(params),
     [JSON.stringify(params)]
   );
 }
 
 // ─────────────────────────────────────────────
-// KPI
+// Transactions
 // ─────────────────────────────────────────────
 
-export function useKPIs(params?: { branch?: string; date_from?: string; date_to?: string }) {
-  return useAsync<KPIData>(
-    () => kpiApi.getKPIs(params),
+export function useTransactions(
+  params?: QueryParams & {
+    movement_type?: string;
+    branch?: string;
+    date_from?: string;
+    date_to?: string;
+  }
+) {
+  return useAsync(
+    () => transactionsApi.list(params),
     [JSON.stringify(params)]
   );
 }
 
-export function useMonthlySales(months?: number) {
-  return useAsync<MonthlySalesData[]>(
-    () => kpiApi.getMonthlySales({ months }),
-    [months]
-  );
-}
-
-export function useAgingDistribution() {
-  return useAsync<AgingDistribution[]>(
-    () => kpiApi.getAgingDistribution(),
-    []
-  );
-}
-
-export function useTopProducts(limit?: number) {
-  return useAsync<TopProduct[]>(
-    () => kpiApi.getTopProducts({ limit }),
-    [limit]
-  );
-}
-
-export function useBranchPerformance() {
-  return useAsync<BranchPerformance[]>(
-    () => kpiApi.getBranchPerformance(),
-    []
-  );
-}
-
-// ─────────────────────────────────────────────
-// Alerts
-// ─────────────────────────────────────────────
-
-export function useAlerts(params?: QueryParams & { status?: string; severity?: string }) {
-  const state = useAsync<PaginatedResponse<Alert>>(
-    () => alertsApi.list(params),
+export function useTransactionSummary(params?: { year?: number }) {
+  return useAsync(
+    () => transactionsApi.summary(params),
     [JSON.stringify(params)]
   );
+}
 
-  const resolveAlert = useCallback(async (id: string) => {
-    await alertsApi.resolve(id);
-    state.refetch();
-  }, [state]);
+export function useBranchBreakdown(params?: { movement_type?: string; date_from?: string; date_to?: string }) {
+  return useAsync(
+    () => transactionsApi.branchBreakdown(params),
+    [JSON.stringify(params)]
+  );
+}
 
-  return { ...state, resolveAlert };
+export function useTypeBreakdown(params?: { date_from?: string; date_to?: string }) {
+  return useAsync(
+    () => transactionsApi.typeBreakdown(params),
+    [JSON.stringify(params)]
+  );
 }
 
 // ─────────────────────────────────────────────
-// Aging Receivables
+// Aging
 // ─────────────────────────────────────────────
 
-export function useAgingReceivables(params?: QueryParams & { customer?: string; min_days?: number }) {
-  return useAsync<PaginatedResponse<AgingReceivable>>(
+export function useAgingList(params?: QueryParams & { report_date?: string; risk?: string }) {
+  return useAsync(
     () => agingApi.list(params),
     [JSON.stringify(params)]
   );
 }
 
-export function useTopRiskyCustomers() {
-  return useAsync<{ customer_id: string; customer_name: string; total_overdue: number; days_overdue: number; risk_score: number }[]>(
-    () => agingApi.getTopRisky(),
-    []
+export function useAgingDates() {
+  return useAsync(() => agingApi.dates(), []);
+}
+
+export function useAgingRisk(params?: { report_date?: string; risk?: string; limit?: number }) {
+  return useAsync(
+    () => agingApi.risk(params),
+    [JSON.stringify(params)]
   );
 }
+
+export function useAgingDistribution(params?: { report_date?: string }) {
+  return useAsync(
+    () => agingApi.distribution(params),
+    [JSON.stringify(params)]
+  );
+}
+
+// ─────────────────────────────────────────────
+// KPIs (aggregated)
+// ─────────────────────────────────────────────
+
+export function useKPIs() {
+  return useAsync(() => kpiApi.getAll(), []);
+}
+
+// ─────────────────────────────────────────────
+// Re-exports of types for use in pages
+// ─────────────────────────────────────────────
+
+export type {
+  Product,
+  Customer,
+  InventoryItem,
+  Movement,
+  AgingRecord,
+  AgingRiskItem,
+  AgingDistributionItem,
+  MonthlySummaryItem,
+  BranchSummary,
+  CategoryBreakdown,
+  KPIData,
+  QueryParams,
+};

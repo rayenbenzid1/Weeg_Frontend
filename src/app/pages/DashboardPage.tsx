@@ -1,12 +1,6 @@
 import {
-  DollarSign,
-  ShoppingCart,
-  Package,
-  TrendingUp,
-  Users,
-  AlertTriangle,
-  BarChart3,
-  Wallet,
+  DollarSign, ShoppingCart, Package, TrendingUp,
+  AlertTriangle, BarChart3, Wallet, Loader2,
 } from 'lucide-react';
 import { useState } from 'react';
 import { KPICard } from '../components/KPICard';
@@ -16,50 +10,113 @@ import { Progress } from '../components/ui/progress';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import {
-  LineChart,
-  Line,
-  BarChart,
-  Bar,
-  AreaChart,
-  Area,
-  PieChart,
-  Pie,
-  Cell,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
+  LineChart, Line, BarChart, Bar, AreaChart, Area,
+  PieChart, Pie, Cell,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts';
 import {
-  calculateKPIs,
-  getSalesByMonth,
-  getAgingDistribution,
-  getTopRiskyCustomers,
-  getTopProducts,
-  getBranchPerformance,
-  getProductById,
-  branches,
-  products,
-} from '../lib/mockData';
+  useKPIs,
+  useTransactionSummary,
+  useAgingDistribution,
+  useAgingRisk,
+  useBranchSummary,
+  useBranchBreakdown,
+  useCategoryBreakdown,
+} from '../lib/dataHooks';
 import { formatCurrency, formatNumber } from '../lib/utils';
 
+// ── Helpers ───────────────────────────────────────────────────────────────
+
+const AGING_COLORS: Record<string, string> = {
+  current: '#10b981',
+  d1_30: '#34d399',
+  d31_60: '#f59e0b',
+  d61_90: '#f97316',
+  d91_120: '#ef4444',
+  d121_150: '#dc2626',
+  d151_180: '#b91c1c',
+  d181_210: '#991b1b',
+  d211_240: '#7f1d1d',
+  d241_270: '#78350f',
+  d271_300: '#92400e',
+  d301_330: '#6b21a8',
+  over_330: '#4c1d95',
+};
+
+const BRANCH_COLORS = ['#4f46e5', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b', '#ef4444'];
+
+function LoadingState({ label }: { label: string }) {
+  return (
+    <div className="flex items-center justify-center h-32 text-muted-foreground gap-2">
+      <Loader2 className="h-4 w-4 animate-spin" />
+      <span className="text-sm">{label}</span>
+    </div>
+  );
+}
+
+function ErrorState({ message }: { message: string }) {
+  return (
+    <div className="flex items-center justify-center h-24 text-destructive text-sm">
+      {message}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// Page
+// ─────────────────────────────────────────────
+
 export function DashboardPage() {
-  const [selectedPeriod, setSelectedPeriod] = useState('12m');
   const [selectedBranch, setSelectedBranch] = useState('all');
-  const [selectedProduct, setSelectedProduct] = useState('all');
-  
-  const kpis = calculateKPIs();
-  const salesByMonth = getSalesByMonth();
-  const agingDistribution = getAgingDistribution();
-  const topRiskyCustomers = getTopRiskyCustomers();
-  const topProducts = getTopProducts();
-  const branchPerformance = getBranchPerformance();
+
+  // ── Data hooks ────────────────────────────────────────────────────────────
+  const kpi = useKPIs();
+  const summary = useTransactionSummary();
+  const agingDist = useAgingDistribution();
+  const agingRisk = useAgingRisk({ limit: 5 });
+  const branchStockSummary = useBranchSummary();
+  const branchSales = useBranchBreakdown({ movement_type: 'sale' });
+  const categoryBreakdown = useCategoryBreakdown();
+
+  // ── KPI derived values ─────────────────────────────────────────────────
+  const kpiData = kpi.data;
+  const monthlySales = summary.data?.summary ?? [];
+
+  // Chart: last 12 months for trend line
+  const trendChartData = [...monthlySales]
+    .sort((a, b) => a.year - b.year || a.month - b.month)
+    .slice(-12)
+    .map(m => ({
+      month: `${m.month_label} ${m.year}`,
+      sales: m.total_sales,
+      purchases: m.total_purchases,
+    }));
+
+  // Chart: aging distribution — filter non-zero buckets for pie
+  const agingPieData = (agingDist.data?.distribution ?? [])
+    .filter(b => b.total > 0)
+    .map(b => ({ name: b.label, value: b.total, fill: AGING_COLORS[b.bucket] ?? '#6b7280' }));
+
+  // Chart: branch performance
+  const branchStockMap = Object.fromEntries(
+    (branchStockSummary.data?.branches ?? []).map(b => [b.branch, b.total_value])
+  );
+  const branchPerfData = (branchSales.data?.branches ?? []).map(b => ({
+    branch: b.branch,
+    sales: b.total,
+    stock: branchStockMap[b.branch] ?? 0,
+  }));
+
+  // Chart: category breakdown
+  const categoryData = (categoryBreakdown.data?.categories ?? []).slice(0, 8).map((c, i) => ({
+    category: c.category,
+    value: c.total_value,
+    fill: BRANCH_COLORS[i % BRANCH_COLORS.length],
+  }));
 
   return (
     <div className="space-y-6">
-      {/* Page Header */}
+      {/* Header */}
       <div>
         <h1 className="text-3xl font-bold">Dashboard Overview</h1>
         <p className="text-muted-foreground mt-1">
@@ -74,46 +131,17 @@ export function DashboardPage() {
           <CardDescription>Customize your dashboard view</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-4 md:grid-cols-3">
-            <div>
-              <label className="text-sm font-medium mb-2 block">Period</label>
-              <Select value={selectedPeriod} onValueChange={setSelectedPeriod}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="1m">Last Month</SelectItem>
-                  <SelectItem value="3m">Last 3 Months</SelectItem>
-                  <SelectItem value="6m">Last 6 Months</SelectItem>
-                  <SelectItem value="12m">Last 12 Months</SelectItem>
-                  <SelectItem value="ytd">Year to Date</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+          <div className="grid gap-4 md:grid-cols-2">
             <div>
               <label className="text-sm font-medium mb-2 block">Branch</label>
               <Select value={selectedBranch} onValueChange={setSelectedBranch}>
                 <SelectTrigger>
-                  <SelectValue />
+                  <SelectValue placeholder="All branches" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Branches</SelectItem>
-                  {branches.map(branch => (
-                    <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <label className="text-sm font-medium mb-2 block">Product</label>
-              <Select value={selectedProduct} onValueChange={setSelectedProduct}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Products</SelectItem>
-                  {products.slice(0, 5).map(product => (
-                    <SelectItem key={product.id} value={product.id}>{product.name}</SelectItem>
+                  {(branchStockSummary.data?.branches ?? []).map(b => (
+                    <SelectItem key={b.branch} value={b.branch}>{b.branch}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -123,219 +151,260 @@ export function DashboardPage() {
       </Card>
 
       {/* KPI Cards */}
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-        <KPICard
-          title="Total Invoices"
-          value={formatNumber(kpis.totalInvoices)}
-          trend={{ value: 12.5, isPositive: true }}
-          icon={ShoppingCart}
-        />
-        <KPICard
-          title="Total Sales"
-          value={formatCurrency(kpis.totalSales)}
-          trend={{ value: 8.3, isPositive: true }}
-          icon={TrendingUp}
-        />
-        <KPICard
-          title="Current Stock Value"
-          value={formatCurrency(kpis.stockValue)}
-          trend={{ value: 3.2, isPositive: false }}
-          icon={Package}
-        />
-        <KPICard
-          title="Total Receivables"
-          value={formatCurrency(kpis.totalReceivables)}
-          trend={{ value: 5.7, isPositive: false }}
-          icon={Wallet}
-        />
-        <KPICard
-          title="Total Purchases"
-          value={formatCurrency(kpis.totalPurchases)}
-          trend={{ value: 6.1, isPositive: true }}
-          icon={DollarSign}
-        />
-        <KPICard
-          title="Total Revenue"
-          value={formatCurrency(kpis.totalRevenue)}
-          trend={{ value: 15.8, isPositive: true }}
-          icon={BarChart3}
-        />
-        <KPICard
-          title="Total Margin"
-          value={formatCurrency(kpis.totalMargin)}
-          trend={{ value: 9.4, isPositive: true }}
-          icon={TrendingUp}
-        />
-        <KPICard
-          title="Risk Level"
-          value={
-            <div className="flex items-center gap-2">
-              <span>{kpis.riskLevel.toFixed(0)}</span>
-              <Badge
-                variant={kpis.riskLevel < 30 ? 'default' : kpis.riskLevel < 60 ? 'secondary' : 'destructive'}
-              >
-                {kpis.riskLevel < 30 ? 'Low' : kpis.riskLevel < 60 ? 'Medium' : 'High'}
-              </Badge>
-            </div>
-          }
-          icon={AlertTriangle}
-          showSparkline={false}
-        />
-      </div>
+      {kpi.loading ? (
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Card key={i} className="animate-pulse h-32" />
+          ))}
+        </div>
+      ) : kpi.error ? (
+        <ErrorState message={kpi.error} />
+      ) : (
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+          <KPICard
+            title="Total Sales"
+            value={formatCurrency(kpiData?.totalSalesValue ?? 0)}
+            icon={TrendingUp}
+          />
+          <KPICard
+            title="Total Purchases"
+            value={formatCurrency(kpiData?.totalPurchasesValue ?? 0)}
+            icon={DollarSign}
+          />
+          <KPICard
+            title="Current Stock Value"
+            value={formatCurrency(kpiData?.stockValue ?? 0)}
+            icon={Package}
+          />
+          <KPICard
+            title="Total Receivables"
+            value={formatCurrency(kpiData?.totalReceivables ?? 0)}
+            icon={Wallet}
+          />
+        </div>
+      )}
 
-      {/* Charts Section */}
+      {/* Charts Row 1 */}
       <div className="grid gap-6 md:grid-cols-2">
-        {/* Sales vs Purchases */}
+        {/* Sales vs Purchases monthly trend */}
         <ChartCard
           title="Sales vs Purchases"
-          description="Monthly comparison of sales and purchase trends"
+          description="Monthly comparison over the last 12 months"
         >
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={salesByMonth}>
-              <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-              <XAxis dataKey="month" className="text-xs" />
-              <YAxis className="text-xs" />
-              <Tooltip
-                formatter={(value: number) => formatCurrency(value)}
-                contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))' }}
-              />
-              <Legend />
-              <Line type="monotone" dataKey="sales" stroke="#4f46e5" strokeWidth={2} name="Sales" />
-              <Line type="monotone" dataKey="purchases" stroke="#f59e0b" strokeWidth={2} name="Purchases" />
-            </LineChart>
-          </ResponsiveContainer>
+          {summary.loading ? (
+            <LoadingState label="Loading trend data…" />
+          ) : trendChartData.length === 0 ? (
+            <div className="flex items-center justify-center h-32 text-sm text-muted-foreground">
+              No transaction data available
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height={280}>
+              <LineChart data={trendChartData}>
+                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                <XAxis dataKey="month" className="text-xs" tick={{ fontSize: 10 }} />
+                <YAxis className="text-xs" tickFormatter={v => `${(v / 1000).toFixed(0)}k`} />
+                <Tooltip
+                  formatter={(v: number) => formatCurrency(v)}
+                  contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))' }}
+                />
+                <Legend />
+                <Line type="monotone" dataKey="sales" stroke="#4f46e5" strokeWidth={2} name="Sales" dot={false} />
+                <Line type="monotone" dataKey="purchases" stroke="#f59e0b" strokeWidth={2} name="Purchases" dot={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          )}
         </ChartCard>
 
-        {/* Branch Comparison */}
+        {/* Branch performance */}
         <ChartCard
           title="Branch Performance"
-          description="Sales and stock comparison across branches"
+          description="Sales vs stock value comparison per branch"
         >
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={branchPerformance}>
-              <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-              <XAxis dataKey="branch" className="text-xs" />
-              <YAxis className="text-xs" />
-              <Tooltip
-                formatter={(value: number) => formatCurrency(value)}
-                contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))' }}
-              />
-              <Legend />
-              <Bar dataKey="sales" fill="#4f46e5" name="Sales" />
-              <Bar dataKey="stock" fill="#8b5cf6" name="Stock Value" />
-            </BarChart>
-          </ResponsiveContainer>
+          {branchSales.loading || branchStockSummary.loading ? (
+            <LoadingState label="Loading branch data…" />
+          ) : branchPerfData.length === 0 ? (
+            <div className="flex items-center justify-center h-32 text-sm text-muted-foreground">
+              No branch data available
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart data={branchPerfData}>
+                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                <XAxis dataKey="branch" className="text-xs" tick={{ fontSize: 10 }} />
+                <YAxis className="text-xs" tickFormatter={v => `${(v / 1000).toFixed(0)}k`} />
+                <Tooltip
+                  formatter={(v: number) => formatCurrency(v)}
+                  contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))' }}
+                />
+                <Legend />
+                <Bar dataKey="sales" fill="#4f46e5" name="Sales" />
+                <Bar dataKey="stock" fill="#8b5cf6" name="Stock Value" />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
         </ChartCard>
+      </div>
 
-        {/* Aging Receivables Distribution */}
+      {/* Charts Row 2 */}
+      <div className="grid gap-6 md:grid-cols-2">
+        {/* Aging receivables distribution */}
         <ChartCard
           title="Aging Receivables Distribution"
-          description="Breakdown of receivables by aging period"
+          description="Breakdown of outstanding receivables by aging period"
         >
-          <ResponsiveContainer width="100%" height={300}>
-            <PieChart>
-              <Pie
-                data={agingDistribution}
-                cx="50%"
-                cy="50%"
-                innerRadius={60}
-                outerRadius={100}
-                paddingAngle={2}
-                dataKey="value"
-              >
-                {agingDistribution.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={entry.fill} />
-                ))}
-              </Pie>
-              <Tooltip
-                formatter={(value: number) => formatCurrency(value)}
-                contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))' }}
-              />
-              <Legend />
-            </PieChart>
-          </ResponsiveContainer>
+          {agingDist.loading ? (
+            <LoadingState label="Loading aging data…" />
+          ) : agingPieData.length === 0 ? (
+            <div className="flex items-center justify-center h-32 text-sm text-muted-foreground">
+              No aging data available
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height={280}>
+              <PieChart>
+                <Pie
+                  data={agingPieData}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={55}
+                  outerRadius={95}
+                  paddingAngle={2}
+                  dataKey="value"
+                >
+                  {agingPieData.map((entry, i) => (
+                    <Cell key={i} fill={entry.fill} />
+                  ))}
+                </Pie>
+                <Tooltip
+                  formatter={(v: number) => formatCurrency(v)}
+                  contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))' }}
+                />
+                <Legend />
+              </PieChart>
+            </ResponsiveContainer>
+          )}
         </ChartCard>
 
-        {/* Top Products */}
+        {/* Category breakdown */}
         <ChartCard
-          title="Top 10 Products by Sales"
-          description="Best performing products this period"
+          title="Inventory by Category"
+          description="Stock value distribution across product categories"
         >
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={topProducts} layout="vertical">
-              <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-              <XAxis type="number" className="text-xs" />
-              <YAxis type="category" dataKey="product.name" className="text-xs" width={120} />
-              <Tooltip
-                formatter={(value: number) => formatCurrency(value)}
-                contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))' }}
-              />
-              <Bar dataKey="total" fill="#4f46e5" name="Sales" />
-            </BarChart>
-          </ResponsiveContainer>
+          {categoryBreakdown.loading ? (
+            <LoadingState label="Loading category data…" />
+          ) : categoryData.length === 0 ? (
+            <div className="flex items-center justify-center h-32 text-sm text-muted-foreground">
+              No category data available
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart data={categoryData} layout="vertical">
+                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                <XAxis type="number" className="text-xs" tickFormatter={v => `${(v / 1000).toFixed(0)}k`} />
+                <YAxis type="category" dataKey="category" className="text-xs" width={90} tick={{ fontSize: 10 }} />
+                <Tooltip
+                  formatter={(v: number) => formatCurrency(v)}
+                  contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))' }}
+                />
+                <Bar dataKey="value" name="Stock Value">
+                  {categoryData.map((entry, i) => (
+                    <Cell key={i} fill={entry.fill} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          )}
         </ChartCard>
       </div>
 
       {/* Top Risky Customers */}
       <ChartCard
-        title="Top 5 Risky Customers"
-        description="Customers with highest risk scores and overdue amounts"
+        title="Top Risky Customers"
+        description="Customers with highest overdue balances — requires immediate attention"
       >
-        <div className="space-y-4">
-          {topRiskyCustomers.map((item) => (
-            <div key={item.customer.id} className="flex items-center gap-4">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="font-medium truncate">{item.customer.name}</p>
-                  <div className="flex items-center gap-3">
-                    <span className="text-sm text-muted-foreground">
-                      {formatCurrency(item.totalOverdue)}
-                    </span>
-                    <Badge variant="destructive">{item.daysOverdue} days</Badge>
+        {agingRisk.loading ? (
+          <LoadingState label="Loading risk data…" />
+        ) : !agingRisk.data || agingRisk.data.top_risk.length === 0 ? (
+          <div className="flex items-center justify-center h-24 text-sm text-muted-foreground">
+            No at-risk customers found
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {agingRisk.data.top_risk.map((item) => {
+              const overduePct = item.total > 0
+                ? Math.min(100, (item.overdue_total / item.total) * 100)
+                : 0;
+              return (
+                <div key={item.id} className="flex items-center gap-4">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="min-w-0">
+                        <p className="font-medium truncate">
+                          {item.customer_name || item.account}
+                        </p>
+                        <p className="text-xs text-muted-foreground">{item.account_code}</p>
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0 ml-3">
+                        <span className="text-sm text-muted-foreground">
+                          {formatCurrency(item.overdue_total)}
+                        </span>
+                        <Badge
+                          variant={
+                            item.risk_score === 'critical' ? 'destructive'
+                            : item.risk_score === 'high' ? 'destructive'
+                            : 'secondary'
+                          }
+                          className="capitalize"
+                        >
+                          {item.risk_score}
+                        </Badge>
+                      </div>
+                    </div>
+                    <Progress
+                      value={overduePct}
+                      className="h-1.5"
+                    />
                   </div>
                 </div>
-                <div className="flex items-center gap-3">
-                  <Progress value={item.riskScore} className="flex-1 h-2" />
-                  <span className="text-sm font-medium text-muted-foreground w-12 text-right">
-                    {item.riskScore}
-                  </span>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </ChartCard>
 
-      {/* Margin Evolution */}
+      {/* Margin / Revenue trend */}
       <ChartCard
-        title="Margin Evolution"
-        description="Profit margin trend over time"
+        title="Revenue Trend"
+        description="Cumulative sales revenue over time"
       >
-        <ResponsiveContainer width="100%" height={300}>
-          <AreaChart data={salesByMonth}>
-            <defs>
-              <linearGradient id="colorMargin" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.3} />
-                <stop offset="95%" stopColor="#4f46e5" stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-            <XAxis dataKey="month" className="text-xs" />
-            <YAxis className="text-xs" />
-            <Tooltip
-              formatter={(value: number) => formatCurrency(value)}
-              contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))' }}
-            />
-            <Area
-              type="monotone"
-              dataKey="sales"
-              stroke="#4f46e5"
-              strokeWidth={2}
-              fill="url(#colorMargin)"
-              name="Margin"
-            />
-          </AreaChart>
-        </ResponsiveContainer>
+        {summary.loading ? (
+          <LoadingState label="Loading revenue data…" />
+        ) : (
+          <ResponsiveContainer width="100%" height={280}>
+            <AreaChart data={trendChartData}>
+              <defs>
+                <linearGradient id="colorSales" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="#4f46e5" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+              <XAxis dataKey="month" className="text-xs" tick={{ fontSize: 10 }} />
+              <YAxis className="text-xs" tickFormatter={v => `${(v / 1000).toFixed(0)}k`} />
+              <Tooltip
+                formatter={(v: number) => formatCurrency(v)}
+                contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))' }}
+              />
+              <Area
+                type="monotone"
+                dataKey="sales"
+                stroke="#4f46e5"
+                strokeWidth={2}
+                fill="url(#colorSales)"
+                name="Revenue"
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        )}
       </ChartCard>
     </div>
   );

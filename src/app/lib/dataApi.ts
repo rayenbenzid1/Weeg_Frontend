@@ -1,6 +1,7 @@
 // ─────────────────────────────────────────────
 // Data Import (adapted to real backend endpoints)
 // ─────────────────────────────────────────────
+import { api } from './api';
 
 export interface ImportLogEntry {
   id: string;
@@ -141,4 +142,400 @@ export const dataImportApi = {
     a.click();
     URL.revokeObjectURL(url);
   },
+};
+
+export interface PaginatedResponse<T> {
+  count: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+  [listKey: string]: any; // products | customers | items | movements | records
+}
+
+export interface QueryParams {
+  page?: number;
+  page_size?: number;
+  search?: string;
+  ordering?: string;
+  [key: string]: any;
+}
+
+function qs(params?: QueryParams): string {
+  if (!params) return '';
+  const p = new URLSearchParams();
+  Object.entries(params).forEach(([k, v]) => {
+    if (v !== undefined && v !== '' && v !== null) p.set(k, String(v));
+  });
+  const s = p.toString();
+  return s ? `?${s}` : '';
+}
+
+// ─────────────────────────────────────────────
+// Products
+// ─────────────────────────────────────────────
+
+export interface Product {
+  id: string;
+  product_code: string;
+  lab_code: string | null;
+  product_name: string;
+  category: string | null;
+  movement_count?: number;
+  latest_snapshot_date?: string | null;
+  total_stock?: number | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ProductsListResponse {
+  count: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+  products: Product[];
+}
+
+export const productsApi = {
+  list: (params?: QueryParams & { category?: string }) =>
+    api.get<ProductsListResponse>(`/products/${qs(params)}`),
+
+  get: (id: string) =>
+    api.get<Product>(`/products/${id}/`),
+
+  categories: () =>
+    api.get<{ categories: string[] }>('/products/categories/'),
+
+  inventoryHistory: (id: string, params?: QueryParams) =>
+    api.get<any>(`/products/${id}/inventory/${qs(params)}`),
+
+  movements: (id: string, params?: QueryParams) =>
+    api.get<any>(`/products/${id}/movements/${qs(params)}`),
+};
+
+// ─────────────────────────────────────────────
+// Customers
+// ─────────────────────────────────────────────
+
+export interface Customer {
+  id: string;
+  customer_name: string;
+  account_code: string;
+  area_code: string | null;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+  movement_count?: number;
+  latest_aging_total?: number | null;
+  latest_aging_risk?: string | null;
+  created_at?: string;
+}
+
+export interface CustomersListResponse {
+  count: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+  customers: Customer[];
+}
+
+export const customersApi = {
+  list: (params?: QueryParams & { area_code?: string }) =>
+    api.get<CustomersListResponse>(`/customers/${qs(params)}`),
+
+  get: (id: string) =>
+    api.get<Customer>(`/customers/${id}/`),
+
+  movements: (id: string, params?: QueryParams) =>
+    api.get<any>(`/customers/${id}/movements/${qs(params)}`),
+
+  aging: (id: string) =>
+    api.get<any>(`/customers/${id}/aging/`),
+};
+
+// ─────────────────────────────────────────────
+// Inventory
+// ─────────────────────────────────────────────
+
+export interface InventoryItem {
+  id: string;
+  snapshot_date: string;
+  product: string;
+  product_code: string;
+  product_name: string;
+  category: string | null;
+  qty_alkarimia: number;
+  qty_benghazi: number;
+  qty_mazraa: number;
+  qty_dahmani: number;
+  qty_janzour: number;
+  qty_misrata: number;
+  value_alkarimia: number;
+  value_mazraa: number;
+  value_dahmani: number;
+  value_janzour: number;
+  value_misrata: number;
+  total_qty: number;
+  cost_price: number;
+  total_value: number;
+}
+
+export interface InventoryListResponse {
+  snapshot_date: string | null;
+  count: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+  totals: { grand_total_qty: number; grand_total_value: number };
+  items: InventoryItem[];
+}
+
+export interface BranchSummary {
+  branch: string;
+  total_qty: number;
+  total_value: number;
+}
+
+export interface CategoryBreakdown {
+  category: string;
+  total_qty: number;
+  total_value: number;
+}
+
+export const inventoryApi = {
+  list: (params?: QueryParams & { snapshot_date?: string; category?: string }) =>
+    api.get<InventoryListResponse>(`/inventory/${qs(params)}`),
+
+  get: (id: string) =>
+    api.get<InventoryItem>(`/inventory/${id}/`),
+
+  dates: () =>
+    api.get<{ dates: string[] }>('/inventory/dates/'),
+
+  branchSummary: (params?: { snapshot_date?: string; category?: string }) =>
+    api.get<{ snapshot_date: string | null; branches: BranchSummary[] }>(
+      `/inventory/branch-summary/${qs(params)}`
+    ),
+
+  categoryBreakdown: (params?: { snapshot_date?: string }) =>
+    api.get<{ snapshot_date: string | null; categories: CategoryBreakdown[] }>(
+      `/inventory/category-breakdown/${qs(params)}`
+    ),
+};
+
+// ─────────────────────────────────────────────
+// Transactions
+// ─────────────────────────────────────────────
+
+export interface Movement {
+  id: string;
+  material_code: string;
+  material_name: string;
+  movement_date: string;
+  movement_type: string;
+  movement_type_display: string;
+  qty_in: number;
+  qty_out: number;
+  total_in: number;
+  total_out: number;
+  balance_price: number;
+  branch_name: string | null;
+  customer_name: string | null;
+}
+
+export interface MovementsListResponse {
+  count: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+  totals: { total_in_value: number; total_out_value: number };
+  movements: Movement[];
+}
+
+export interface MonthlySummaryItem {
+  year: number;
+  month: number;
+  month_label: string;
+  total_sales: number;
+  total_purchases: number;
+  sales_count: number;
+  purchases_count: number;
+}
+
+export interface TypeBreakdownItem {
+  movement_type: string;
+  label: string;
+  count: number;
+  total_in: number;
+  total_out: number;
+}
+
+export interface BranchBreakdownItem {
+  branch: string;
+  count: number;
+  total: number;
+}
+
+export const transactionsApi = {
+  list: (params?: QueryParams & {
+    movement_type?: string;
+    branch?: string;
+    date_from?: string;
+    date_to?: string;
+  }) =>
+    api.get<MovementsListResponse>(`/transactions/${qs(params)}`),
+
+  get: (id: string) =>
+    api.get<any>(`/transactions/${id}/`),
+
+  summary: (params?: { year?: number; months?: number }) =>
+    api.get<{ summary: MonthlySummaryItem[] }>(`/transactions/summary/${qs(params)}`),
+
+  typeBreakdown: (params?: { date_from?: string; date_to?: string }) =>
+    api.get<{ breakdown: TypeBreakdownItem[] }>(
+      `/transactions/type-breakdown/${qs(params)}`
+    ),
+
+  branchBreakdown: (params?: { movement_type?: string; date_from?: string; date_to?: string }) =>
+    api.get<{ movement_type: string; branches: BranchBreakdownItem[] }>(
+      `/transactions/branch-breakdown/${qs(params)}`
+    ),
+};
+
+// ─────────────────────────────────────────────
+// Aging
+// ─────────────────────────────────────────────
+
+export interface AgingRecord {
+  id: string;
+  report_date: string;
+  customer: string | null;
+  customer_name: string | null;
+  account: string;
+  account_code: string;
+  current: number;
+  d1_30: number;
+  d31_60: number;
+  d61_90: number;
+  d91_120: number;
+  d121_150: number;
+  d151_180: number;
+  d181_210: number;
+  d211_240: number;
+  d241_270: number;
+  d271_300: number;
+  d301_330: number;
+  over_330: number;
+  total: number;
+  overdue_total: number;
+  risk_score: 'low' | 'medium' | 'high' | 'critical';
+}
+
+export interface AgingListResponse {
+  report_date: string | null;
+  count: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+  grand_total: number;
+  records: AgingRecord[];
+}
+
+export interface AgingRiskItem {
+  id: string;
+  account: string;
+  account_code: string;
+  customer_name: string | null;
+  total: number;
+  overdue_total: number;
+  risk_score: string;
+}
+
+export interface AgingDistributionItem {
+  bucket: string;
+  label: string;
+  total: number;
+  percentage: number;
+}
+
+export const agingApi = {
+  list: (params?: QueryParams & { report_date?: string; risk?: string }) =>
+    api.get<AgingListResponse>(`/aging/${qs(params)}`),
+
+  get: (id: string) =>
+    api.get<AgingRecord>(`/aging/${id}/`),
+
+  dates: () =>
+    api.get<{ dates: string[] }>('/aging/dates/'),
+
+  risk: (params?: { report_date?: string; risk?: string; limit?: number }) =>
+    api.get<{ report_date: string | null; count: number; top_risk: AgingRiskItem[] }>(
+      `/aging/risk/${qs(params)}`
+    ),
+
+  distribution: (params?: { report_date?: string }) =>
+    api.get<{
+      report_date: string | null;
+      grand_total: number;
+      distribution: AgingDistributionItem[];
+    }>(`/aging/distribution/${qs(params)}`),
+};
+
+// ─────────────────────────────────────────────
+// KPI Engine (aggregated from multiple endpoints)
+// ─────────────────────────────────────────────
+
+export interface KPIData {
+  totalSalesValue: number;
+  totalPurchasesValue: number;
+  stockValue: number;
+  totalReceivables: number;
+  monthlySummary: MonthlySummaryItem[];
+}
+
+export const kpiApi = {
+  /**
+   * Fetches KPIs by combining:
+   *  - transactions/summary (sales, purchases over 12 months)
+   *  - inventory (total stock value)
+   *  - aging (total receivables)
+   */
+  async getAll(): Promise<KPIData> {
+    const [summaryRes, inventoryRes, agingRes] = await Promise.allSettled([
+      transactionsApi.summary(),
+      inventoryApi.list({ page_size: 1 }),
+      agingApi.list({ page_size: 1 }),
+    ]);
+
+    const summary =
+      summaryRes.status === 'fulfilled' ? summaryRes.value.summary : [];
+
+    const stockValue =
+      inventoryRes.status === 'fulfilled'
+        ? inventoryRes.value.totals?.grand_total_value ?? 0
+        : 0;
+
+    const totalReceivables =
+      agingRes.status === 'fulfilled'
+        ? agingRes.value.grand_total ?? 0
+        : 0;
+
+    const totalSalesValue = summary.reduce((s, m) => s + m.total_sales, 0);
+    const totalPurchasesValue = summary.reduce((s, m) => s + m.total_purchases, 0);
+
+    return {
+      totalSalesValue,
+      totalPurchasesValue,
+      stockValue,
+      totalReceivables,
+      monthlySummary: summary,
+    };
+  },
+};
+
+// ─────────────────────────────────────────────
+// Branches (derived from inventory branch-summary)
+// ─────────────────────────────────────────────
+
+export const branchesApi = {
+  list: () => inventoryApi.branchSummary(),
 };
