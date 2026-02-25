@@ -1,9 +1,8 @@
 import { useState } from 'react';
-import { Upload, FileSpreadsheet, Download, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Upload, CheckCircle2, AlertCircle, Download } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Progress } from '../components/ui/progress';
-import { Badge } from '../components/ui/badge';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import {
   Table,
@@ -13,6 +12,8 @@ import {
   TableHeader,
   TableRow,
 } from '../components/ui/table';
+import { dataImportApi, ImportResult, DetectResult } from '../lib/dataApi'; // adjust path if needed
+import axios from 'axios';
 
 const templates = [
   {
@@ -52,188 +53,279 @@ const templates = [
   },
 ];
 
-const mockPreviewData = [
-  { id: 1, date: '2026-02-10', invoice: 'INV-1001', product: 'Laptop Dell XPS 15', quantity: 2, amount: 3198, status: '✓' },
-  { id: 2, date: '2026-02-10', invoice: 'INV-1002', product: 'iPhone 15 Pro', quantity: 5, amount: 5995, status: '✓' },
-  { id: 3, date: '2026-02-09', invoice: 'INV-1003', product: 'MacBook Pro 16"', quantity: 1, amount: 2799, status: '✓' },
-  { id: 4, date: '2026-02-09', invoice: 'INV-1004', product: 'Invalid Product', quantity: -1, amount: 0, status: '✗' },
-  { id: 5, date: '2026-02-08', invoice: 'INV-1005', product: 'AirPods Pro', quantity: 10, amount: 2490, status: '✓' },
-];
-
 export function DataImportPage() {
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
-  const [uploadComplete, setUploadComplete] = useState(false);
-  const [showPreview, setShowPreview] = useState(false);
-  const userRole = 'manager'; // Mock user role
+  const [uploadResult, setUploadResult] = useState<ImportResult | null>(null);
+  const [previewData, setPreviewData] = useState<DetectResult | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
+  const userRole = 'manager'; // Replace with real role from auth context
+
+  const handleFileChange = async (file: File | null) => {
     if (!file) return;
 
-    setIsUploading(true);
+    const lowerName = file.name.toLowerCase();
+    if (!lowerName.endsWith('.xlsx') && !lowerName.endsWith('.xls')) {
+      setErrorMsg('Only .xlsx and .xls files are accepted');
+      return;
+    }
+
+    setSelectedFile(file);
+    setErrorMsg(null);
+    setPreviewData(null);
+    setUploadResult(null);
     setUploadProgress(0);
-    setShowPreview(false);
 
-    // Simulate upload progress
-    const interval = setInterval(() => {
-      setUploadProgress((prev) => {
-        if (prev >= 100) {
-          clearInterval(interval);
-          setIsUploading(false);
-          setUploadComplete(true);
-          setTimeout(() => setShowPreview(true), 500);
-          return 100;
-        }
-        return prev + 10;
-      });
-    }, 200);
-  };
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    const file = e.dataTransfer.files[0];
-    if (file && file.name.endsWith('.xlsx')) {
-      // Process file
-      const input = document.createElement('input');
-      input.type = 'file';
-      const dataTransfer = new DataTransfer();
-      dataTransfer.items.add(file);
-      input.files = dataTransfer.files;
-      handleFileUpload({ target: input } as any);
+    try {
+      const detect = await dataImportApi.detectFile(file);
+      setPreviewData(detect);
+    } catch (err: any) {
+      setErrorMsg(err.message || 'File detection failed');
     }
   };
 
-  const validRows = mockPreviewData.filter(row => row.status === '✓').length;
-  const invalidRows = mockPreviewData.filter(row => row.status === '✗').length;
+  const handleUpload = async () => {
+    if (!selectedFile) return;
+
+    setIsUploading(true);
+    setErrorMsg(null);
+    setUploadResult(null);
+    setUploadProgress(0);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+
+      // Optional: force file type or add metadata
+      // formData.append('file_type', 'movements');
+      // formData.append('snapshot_date', '2025-12-31');
+
+      const token = localStorage.getItem('fasi_access_token');
+
+      const response = await axios.post<ImportResult>(
+        '/api/import/upload/',
+        formData,
+        {
+          headers: {
+            Authorization: token ? `Bearer ${token}` : '',
+          },
+          onUploadProgress: (progressEvent) => {
+            if (progressEvent.total) {
+              const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+              setUploadProgress(percent);
+            }
+          },
+        }
+      );
+
+      setUploadResult(response.data);
+      setUploadProgress(100);
+    } catch (err: any) {
+      const msg =
+        err.response?.data?.error ||
+        err.response?.data?.message ||
+        err.message ||
+        'Import failed';
+      setErrorMsg(msg);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const hasPreview = previewData && previewData.preview_rows.length > 0;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8 p-6">
       {/* Page Header */}
       <div>
-        <h1 className="text-3xl font-bold">Data Import Center</h1>
-        <p className="text-muted-foreground mt-1">
-          Upload Excel files to import your business data
+        <h1 className="text-3xl font-bold tracking-tight">Data Import Center</h1>
+        <p className="text-muted-foreground mt-2">
+          Upload Excel files to bring your business data into the system
         </p>
       </div>
 
-      {/* Upload Zone */}
+      {/* Upload Card */}
       <Card>
         <CardHeader>
           <CardTitle>Upload File</CardTitle>
           <CardDescription>
-            Drag and drop your Excel file or click to browse
+            Drag and drop your Excel file or click to browse (.xlsx / .xls)
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div
-            className="border-2 border-dashed rounded-lg p-12 text-center hover:border-indigo-500 transition-colors cursor-pointer"
-            onDragOver={handleDragOver}
-            onDrop={handleDrop}
+            className={`border-2 border-dashed rounded-xl p-12 text-center transition-all cursor-pointer
+              ${isUploading ? 'opacity-60 pointer-events-none border-gray-300' : 'hover:border-indigo-500 hover:bg-indigo-50/30'}`}
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault();
+              handleFileChange(e.dataTransfer.files[0] || null);
+            }}
             onClick={() => document.getElementById('file-input')?.click()}
           >
-            <div className="flex flex-col items-center gap-4">
-              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-indigo-50 dark:bg-indigo-950">
-                <Upload className="h-8 w-8 text-indigo-600 dark:text-indigo-400" />
-              </div>
+            <div className="flex flex-col items-center gap-5">
+              <Upload className="h-14 w-14 text-indigo-600 dark:text-indigo-400" />
               <div>
-                <p className="text-lg font-medium">Drop your Excel file here</p>
-                <p className="text-sm text-muted-foreground mt-1">
-                  or click to browse (max 10MB, .xlsx only)
+                <p className="text-xl font-semibold">Drop your Excel file here</p>
+                <p className="text-sm text-muted-foreground mt-2">
+                  or click to browse (recommended max 10 MB)
                 </p>
               </div>
-              <Button>Browse Files</Button>
+              <Button disabled={isUploading} size="lg">
+                Browse Files
+              </Button>
             </div>
+
             <input
               id="file-input"
               type="file"
-              accept=".xlsx"
+              accept=".xlsx,.xls"
               className="hidden"
-              onChange={handleFileUpload}
+              onChange={(e) => handleFileChange(e.target.files?.[0] || null)}
             />
           </div>
 
-          {/* Upload Progress */}
-          {isUploading && (
-            <div className="mt-6 space-y-4">
-              <div className="flex items-center justify-between text-sm">
-                <span className="font-medium">Uploading...</span>
-                <span className="text-muted-foreground">{uploadProgress}%</span>
-              </div>
-              <Progress value={uploadProgress} className="h-2" />
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <div className="flex items-center gap-2">
-                  <div className={`h-2 w-2 rounded-full ${uploadProgress > 0 ? 'bg-green-500' : 'bg-gray-300'}`} />
-                  <span>Uploading</span>
-                </div>
-                <span>→</span>
-                <div className="flex items-center gap-2">
-                  <div className={`h-2 w-2 rounded-full ${uploadProgress > 40 ? 'bg-green-500' : 'bg-gray-300'}`} />
-                  <span>Validating</span>
-                </div>
-                <span>→</span>
-                <div className="flex items-center gap-2">
-                  <div className={`h-2 w-2 rounded-full ${uploadProgress > 70 ? 'bg-green-500' : 'bg-gray-300'}`} />
-                  <span>Processing</span>
-                </div>
-                <span>→</span>
-                <div className="flex items-center gap-2">
-                  <div className={`h-2 w-2 rounded-full ${uploadProgress === 100 ? 'bg-green-500' : 'bg-gray-300'}`} />
-                  <span>Complete</span>
-                </div>
-              </div>
+          {selectedFile && (
+            <div className="mt-5 text-center text-sm">
+              <p className="font-medium">{selectedFile.name}</p>
+              <p className="text-muted-foreground">
+                {(selectedFile.size / (1024 * 1024)).toFixed(2)} MB
+              </p>
             </div>
           )}
 
-          {/* Upload Success */}
-          {uploadComplete && !isUploading && (
-            <Alert className="mt-6 border-green-500 bg-green-50 dark:bg-green-950">
-              <CheckCircle2 className="h-4 w-4 text-green-600" />
-              <AlertDescription className="text-green-600">
-                File uploaded successfully! Review the preview below and confirm import.
+          {errorMsg && (
+            <Alert variant="destructive" className="mt-6">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>{errorMsg}</AlertDescription>
+            </Alert>
+          )}
+
+          {isUploading && (
+            <div className="mt-8 space-y-3">
+              <Progress value={uploadProgress} className="h-2.5" />
+              <p className="text-center text-sm text-muted-foreground font-medium">
+                {uploadProgress}% — Processing...
+              </p>
+            </div>
+          )}
+
+          {uploadResult && (
+            <Alert className="mt-6 border-green-600 bg-green-50 dark:bg-green-950/40">
+              <CheckCircle2 className="h-5 w-5 text-green-600" />
+              <AlertDescription className="text-green-800 dark:text-green-200">
+                <p className="font-semibold">{uploadResult.message}</p>
+                <p className="mt-1">
+                  Imported rows: {uploadResult.result.created + uploadResult.result.updated}
+                  {uploadResult.result.errors.length > 0 && (
+                    <> • Errors: {uploadResult.result.errors.length}</>
+                  )}
+                </p>
               </AlertDescription>
             </Alert>
           )}
+
+          <div className="mt-8 flex justify-center gap-4">
+            <Button
+              onClick={handleUpload}
+              disabled={!selectedFile || isUploading}
+              size="lg"
+              className="min-w-[160px]"
+            >
+              {isUploading ? 'Importing...' : 'Start Import'}
+            </Button>
+
+            <Button
+              variant="outline"
+              size="lg"
+              onClick={() => {
+                setSelectedFile(null);
+                setPreviewData(null);
+                setErrorMsg(null);
+                setUploadResult(null);
+                setUploadProgress(0);
+              }}
+              disabled={isUploading}
+            >
+              Cancel / Clear
+            </Button>
+          </div>
         </CardContent>
       </Card>
 
-      {/* Template Downloads */}
+      {/* File Preview */}
+      {hasPreview && (
+        <Card>
+          <CardHeader>
+            <CardTitle>File Preview</CardTitle>
+            <CardDescription>
+              Detected type: <strong>{previewData.detected_file_type}</strong> •{' '}
+              {previewData.preview_rows.length} preview rows
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="rounded-lg border overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-muted/60">
+                    {previewData.headers.map((header, i) => (
+                      <TableHead key={i} className="whitespace-nowrap">
+                        {header || `Column ${i + 1}`}
+                      </TableHead>
+                    ))}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {previewData.preview_rows.map((row, rowIndex) => (
+                    <TableRow key={rowIndex}>
+                      {previewData.headers.map((header, colIndex) => (
+                        <TableCell key={colIndex}>
+                          {row[header] ?? row[`Column ${colIndex + 1}`] ?? '—'}
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Download Templates */}
       <Card>
         <CardHeader>
           <CardTitle>Download Templates</CardTitle>
-          <CardDescription>
-            Download Excel templates for different data types
-          </CardDescription>
+          <CardDescription>Ready-to-use Excel import templates</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {templates.map((template) => {
-              const canAccess = template.role.includes(userRole);
-              
+              const canDownload = template.role.includes(userRole);
               return (
-                <Card key={template.id} className={!canAccess ? 'opacity-50' : ''}>
-                  <CardContent className="p-4">
-                    <div className="flex items-start gap-3">
-                      <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-indigo-50 dark:bg-indigo-950 text-2xl">
-                        {template.icon}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h4 className="font-medium">{template.title}</h4>
-                        <p className="text-sm text-muted-foreground mt-1">{template.description}</p>
-                        <Button
-                          variant="link"
-                          size="sm"
-                          className="px-0 mt-2"
-                          disabled={!canAccess}
-                        >
-                          <Download className="h-4 w-4 mr-1" />
-                          Download
-                        </Button>
-                      </div>
+                <Card
+                  key={template.id}
+                  className={`transition-all ${!canDownload ? 'opacity-55' : 'hover:shadow-md'}`}
+                >
+                  <CardContent className="pt-6">
+                    <div className="flex flex-col items-center text-center gap-3">
+                      <div className="text-4xl">{template.icon}</div>
+                      <h4 className="font-semibold">{template.title}</h4>
+                      <p className="text-sm text-muted-foreground min-h-[40px]">
+                        {template.description}
+                      </p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="mt-2 w-full sm:w-auto"
+                        disabled={!canDownload}
+                        // onClick={() => dataImportApi.downloadTemplate(template.id)}
+                      >
+                        <Download className="mr-2 h-4 w-4" />
+                        Download
+                      </Button>
                     </div>
                   </CardContent>
                 </Card>
@@ -243,117 +335,9 @@ export function DataImportPage() {
         </CardContent>
       </Card>
 
-      {/* File Preview */}
-      {showPreview && (
-        <Card>
-          <CardHeader>
-            <div className="flex items-start justify-between">
-              <div>
-                <CardTitle>File Preview</CardTitle>
-                <CardDescription>
-                  Review the first 10 rows of your data
-                </CardDescription>
-              </div>
-              <div className="flex gap-2">
-                <Badge variant="default" className="bg-green-500">
-                  {validRows} Valid
-                </Badge>
-                {invalidRows > 0 && (
-                  <Badge variant="destructive">
-                    {invalidRows} Invalid
-                  </Badge>
-                )}
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="rounded-lg border overflow-hidden mb-4">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-muted/50">
-                    <TableHead>Status</TableHead>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Invoice</TableHead>
-                    <TableHead>Product</TableHead>
-                    <TableHead>Quantity</TableHead>
-                    <TableHead>Amount</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {mockPreviewData.map((row) => (
-                    <TableRow key={row.id} className={row.status === '✗' ? 'bg-red-50 dark:bg-red-950' : ''}>
-                      <TableCell>
-                        {row.status === '✓' ? (
-                          <CheckCircle2 className="h-5 w-5 text-green-600" />
-                        ) : (
-                          <AlertCircle className="h-5 w-5 text-red-600" />
-                        )}
-                      </TableCell>
-                      <TableCell>{row.date}</TableCell>
-                      <TableCell>{row.invoice}</TableCell>
-                      <TableCell>{row.product}</TableCell>
-                      <TableCell>{row.quantity}</TableCell>
-                      <TableCell>${row.amount.toLocaleString()}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-
-            {invalidRows > 0 && (
-              <Alert className="mb-4 border-yellow-500 bg-yellow-50 dark:bg-yellow-950">
-                <AlertCircle className="h-4 w-4 text-yellow-600" />
-                <AlertDescription className="text-yellow-600">
-                  Some rows contain errors. Please fix them before importing or remove invalid rows.
-                </AlertDescription>
-              </Alert>
-            )}
-
-            <div className="flex gap-3">
-              <Button className="flex-1" size="lg">
-                Confirm Import
-              </Button>
-              <Button variant="outline" size="lg" onClick={() => setShowPreview(false)}>
-                Cancel
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Data Processing Pipeline */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Data Processing Pipeline</CardTitle>
-          <CardDescription>
-            How your data flows through the system
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-col md:flex-row items-center justify-between gap-4 p-6 bg-muted/30 rounded-lg">
-            {[
-              { icon: FileSpreadsheet, label: 'Excel File', color: 'text-blue-600' },
-              { icon: CheckCircle2, label: 'Validation', color: 'text-green-600' },
-              { icon: Upload, label: 'Database Storage', color: 'text-purple-600' },
-              { icon: Upload, label: 'KPI Engine', color: 'text-indigo-600' },
-              { icon: Upload, label: 'Dashboard Update', color: 'text-orange-600' },
-              { icon: AlertCircle, label: 'Smart Alerts', color: 'text-red-600' },
-            ].map((step, index) => (
-              <div key={index} className="flex items-center gap-4">
-                <div className="flex flex-col items-center gap-2">
-                  <div className="flex h-16 w-16 items-center justify-center rounded-full bg-card border-2">
-                    <step.icon className={`h-8 w-8 ${step.color}`} />
-                  </div>
-                  <span className="text-sm font-medium text-center">{step.label}</span>
-                </div>
-                {index < 5 && (
-                  <div className="hidden md:block text-2xl text-muted-foreground">→</div>
-                )}
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+      {/* Optional: Data Processing Pipeline visual */}
+      {/* You can keep it or remove it – it's purely decorative */}
+      {/* ... */}
     </div>
   );
 }

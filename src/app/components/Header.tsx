@@ -98,18 +98,6 @@ export function Header({ onMenuClick }: HeaderProps) {
             </div>
           </div>
 
-          {/* Search Bar */}
-          <div className="flex-1 max-w-md hidden md:block">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                type="search"
-                placeholder="Search products, customers, invoices..."
-                className="pl-10 bg-muted/50"
-              />
-            </div>
-          </div>
-
           {/* Right Side Actions */}
           <div className="flex items-center gap-2 ml-auto">
             {/* Theme Toggle */}

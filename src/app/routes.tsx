@@ -6,7 +6,7 @@ import { MainLayout } from './layouts/MainLayout';
 import { DashboardPage } from './pages/DashboardPage';
 import { DataImportPage } from './pages/DataImportPage';
 import { KPIEnginePage } from './pages/KPIEnginePage';
-import { SalesPage } from './pages/SalesPage';
+import { TransactionsPage } from './pages/TransactionsPage';
 import { InventoryPage } from './pages/InventoryPage';
 import { AlertsPage } from './pages/AlertsPage';
 import { AgingPage } from './pages/AgingPage';
@@ -57,7 +57,7 @@ export const router = createBrowserRouter([
       },
       {
         path: 'sales',
-        element: <SalesPage />,
+        element: <TransactionsPage />,
       },
       {
         path: 'inventory',
