@@ -455,6 +455,7 @@ export interface AgingDistributionItem {
   label: string;
   total: number;
   percentage: number;
+  midpoint_days: number;
 }
 
 export const agingApi = {

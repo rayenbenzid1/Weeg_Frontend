@@ -272,55 +272,6 @@ export function KPIEnginePage() {
             </Card>
           )}
 
-          {/* Legacy top-risk */}
-          {topRisk.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Top Risky Customers</CardTitle>
-                <CardDescription>Customers with highest outstanding receivables risk</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {topRisk.map((item, index) => {
-                    const riskColors: Record<string, string> = {
-                      critical: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
-                      high:     'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200',
-                      medium:   'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200',
-                      low:      'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
-                    };
-                    const riskPct: Record<string, number> = { critical: 90, high: 70, medium: 45, low: 20 };
-                    const score = riskPct[item.risk_score] ?? 50;
-                    return (
-                      <div key={item.id} className="flex items-center gap-4 p-4 rounded-lg border hover:bg-accent/50 transition-colors">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-100 dark:bg-red-900 font-bold text-red-600 shrink-0">
-                          {index + 1}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between mb-1.5">
-                            <div>
-                              <p className="font-medium">{item.customer_name || item.account}</p>
-                              <p className="text-xs text-muted-foreground font-mono">{item.account_code}</p>
-                            </div>
-                            <div className="text-right flex flex-col gap-1 items-end">
-                              <p className="font-semibold text-red-600">{formatCurrency(item.total)}</p>
-                              <Badge className={`text-xs ${riskColors[item.risk_score] ?? ''}`}>
-                                {item.risk_score.toUpperCase()}
-                              </Badge>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <Progress value={score} className="flex-1 h-1.5 [&>div]:bg-red-500" />
-                            <span className="text-xs text-muted-foreground w-10 text-right">{score}/100</span>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
           {/* Credit KPIs */}
           <div className="mt-6 pt-6 border-t">
             <CreditKPISection />
