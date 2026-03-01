@@ -1,42 +1,39 @@
+// src/app/pages/KPIEnginePage.tsx
 import { useState } from 'react';
-import { TrendingUp, Package, DollarSign, BarChart3, Info, RefreshCw, Loader2, AlertTriangle } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
+import { TrendingUp, Package, DollarSign, BarChart3, Info, RefreshCw, Loader2 } from 'lucide-react';
 import { KPICard } from '../components/KPICard';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../components/ui/tooltip';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Progress } from '../components/ui/progress';
 import {
-  BarChart, Bar, LineChart, Line, AreaChart, Area,
+  BarChart, Bar, AreaChart, Area,
   XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip,
   Legend, ResponsiveContainer,
 } from 'recharts';
+import { CreditKPISection } from '../components/CreditKPISection';
 import {
   useKPIs,
   useTransactionSummary,
   useBranchBreakdown,
   useTypeBreakdown,
   useAgingRisk,
-  useAgingDates,
   type MonthlySummaryItem,
 } from '../lib/dataHooks';
 import { formatCurrency, formatNumber } from '../lib/utils';
 
 const BRANCH_COLORS = ['#4f46e5', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
 
+// ── FIX: icon typed as LucideIcon (same as KPICardProps.icon) ────────────────
 function TooltipKPICard({
-  title,
-  value,
-  trend,
-  icon: Icon,
-  tooltip,
-  formula,
+  title, value, trend, icon: Icon, tooltip, formula,
 }: {
   title: string;
   value: React.ReactNode;
   trend?: { value: number; isPositive: boolean };
-  icon: React.FC<any>;
+  icon: LucideIcon;   // ← correct type — no more $$typeof mismatch
   tooltip: string;
   formula: string;
 }) {
@@ -58,32 +55,22 @@ function TooltipKPICard({
 }
 
 export function KPIEnginePage() {
-  const [selectedBranch, setSelectedBranch] = useState('all');
+  const [_selectedBranch] = useState('all');
 
-  // ── Data hooks ─────────────────────────────────────────────────────────
   const { data: kpis, loading: kpiLoading, refetch: refetchKPIs } = useKPIs();
   const { data: summaryRes, loading: summaryLoading } = useTransactionSummary();
   const { data: branchSalesRes } = useBranchBreakdown({ movement_type: 'sale' });
   const { data: branchPurchasesRes } = useBranchBreakdown({ movement_type: 'purchase' });
   const { data: typeBreakdownRes } = useTypeBreakdown();
-  const { data: agingDatesData } = useAgingDates();
   const { data: agingRiskRes } = useAgingRisk({ limit: 5 });
 
-  // ── Derived data ──────────────────────────────────────────────────────
   const monthlySummary: MonthlySummaryItem[] = summaryRes?.summary ?? [];
 
-  // Build monthly chart data
   const monthlySalesData = [...monthlySummary]
     .sort((a, b) => (a.year * 100 + a.month) - (b.year * 100 + b.month))
     .slice(-12)
-    .map(m => ({
-      month: m.month_label,
-      sales: m.total_sales,
-      purchases: m.total_purchases,
-      margin: m.total_sales - m.total_purchases,
-    }));
+    .map(m => ({ month: m.month_label, sales: m.total_sales, purchases: m.total_purchases }));
 
-  // Branch performance
   const branchSales = branchSalesRes?.branches ?? [];
   const branchPurchases = branchPurchasesRes?.branches ?? [];
   const allBranches = Array.from(
@@ -96,28 +83,25 @@ export function KPIEnginePage() {
     fill: BRANCH_COLORS[i % BRANCH_COLORS.length],
   }));
 
-  // Movement type breakdown
   const typeData = (typeBreakdownRes?.breakdown ?? []).map(t => ({
-    name: t.label,
-    in: t.total_in,
-    out: t.total_out,
-    count: t.count,
+    name: t.label, in: t.total_in, out: t.total_out, count: t.count,
   }));
 
-  // KPI computations
   const totalSales = kpis?.totalSalesValue ?? 0;
   const totalPurchases = kpis?.totalPurchasesValue ?? 0;
   const stockValue = kpis?.stockValue ?? 0;
   const totalReceivables = kpis?.totalReceivables ?? 0;
   const grossMargin = totalSales > 0 ? ((totalSales - totalPurchases) / totalSales) * 100 : 0;
 
-  // Month-over-month trend
   const lastTwo = monthlySummary.slice(-2);
-  const salesTrend = lastTwo.length === 2 && lastTwo[0].total_sales > 0
-    ? { value: Math.abs(((lastTwo[1].total_sales - lastTwo[0].total_sales) / lastTwo[0].total_sales) * 100), isPositive: lastTwo[1].total_sales >= lastTwo[0].total_sales }
-    : undefined;
+  const salesTrend =
+    lastTwo.length === 2 && lastTwo[0].total_sales > 0
+      ? {
+          value: Math.abs(((lastTwo[1].total_sales - lastTwo[0].total_sales) / lastTwo[0].total_sales) * 100),
+          isPositive: lastTwo[1].total_sales >= lastTwo[0].total_sales,
+        }
+      : undefined;
 
-  // Top risky customers
   const topRisk = agingRiskRes?.top_risk ?? [];
 
   return (
@@ -136,62 +120,34 @@ export function KPIEnginePage() {
         </Button>
       </div>
 
-      {/* Loading state */}
       {kpiLoading && (
         <div className="flex items-center justify-center py-12">
           <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />
-          <span className="ml-3 text-muted-foreground">Loading KPIs from backend...</span>
+          <span className="ml-3 text-muted-foreground">Loading KPIs…</span>
         </div>
       )}
 
-      {/* Core KPIs */}
       {!kpiLoading && (
         <>
+          {/* Core KPIs */}
           <div>
             <h2 className="text-xl font-semibold mb-4">Business KPIs</h2>
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-              <TooltipKPICard
-                title="Total Sales"
-                value={formatCurrency(totalSales)}
-                trend={salesTrend}
-                icon={TrendingUp}
-                tooltip="Total revenue from all sales movements"
-                formula="SUM(movements.total_out WHERE type IN ['sale'])"
-              />
-
-              <TooltipKPICard
-                title="Total Purchases"
-                value={formatCurrency(totalPurchases)}
-                icon={DollarSign}
-                tooltip="Total cost from all purchase movements"
-                formula="SUM(movements.total_in WHERE type IN ['purchase', 'main_entry'])"
-              />
-
-              <TooltipKPICard
-                title="Stock Value"
-                value={formatCurrency(stockValue)}
-                icon={Package}
-                tooltip="Current total inventory value across all branches"
-                formula="SUM(inventory.total_value) @ latest snapshot"
-              />
-
-              <TooltipKPICard
-                title="Total Receivables"
-                value={formatCurrency(totalReceivables)}
-                icon={BarChart3}
-                tooltip="Total outstanding customer receivables from aging report"
-                formula="SUM(aging.total) @ latest report date"
-              />
-
-              <TooltipKPICard
-                title="Gross Margin"
-                value={`${grossMargin.toFixed(1)}%`}
-                trend={{ value: 0, isPositive: grossMargin > 0 }}
-                icon={BarChart3}
-                tooltip="Gross profit margin percentage over all recorded periods"
-                formula="(Total Sales − Total Purchases) / Total Sales × 100"
-              />
-
+              <TooltipKPICard title="Total Sales" value={formatCurrency(totalSales)} trend={salesTrend}
+                icon={TrendingUp} tooltip="Total revenue from all sales movements"
+                formula="SUM(movements.total_out WHERE type='sale')" />
+              <TooltipKPICard title="Total Purchases" value={formatCurrency(totalPurchases)}
+                icon={DollarSign} tooltip="Total cost from all purchase movements"
+                formula="SUM(movements.total_in WHERE type='purchase')" />
+              <TooltipKPICard title="Stock Value" value={formatCurrency(stockValue)}
+                icon={Package} tooltip="Current total inventory value"
+                formula="SUM(inventory.total_value)" />
+              <TooltipKPICard title="Total Receivables" value={formatCurrency(totalReceivables)}
+                icon={BarChart3} tooltip="Total outstanding customer receivables"
+                formula="SUM(aging.total) @ latest report date" />
+              <TooltipKPICard title="Gross Margin" value={`${grossMargin.toFixed(1)}%`}
+                trend={{ value: 0, isPositive: grossMargin > 0 }} icon={BarChart3}
+                tooltip="Gross profit margin" formula="(Sales − Purchases) / Sales × 100" />
               <Card className="p-6">
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-50 to-violet-50 dark:from-indigo-950 dark:to-violet-950">
@@ -200,9 +156,7 @@ export function KPIEnginePage() {
                 </div>
                 <div className="space-y-1">
                   <p className="text-sm text-muted-foreground">Sales / Stock Ratio</p>
-                  <p className="text-2xl font-bold">
-                    {stockValue > 0 ? (totalSales / stockValue).toFixed(2) : '—'}x
-                  </p>
+                  <p className="text-2xl font-bold">{stockValue > 0 ? (totalSales / stockValue).toFixed(2) : '—'}x</p>
                   <p className="text-xs text-muted-foreground">Sales-to-inventory coverage</p>
                 </div>
               </Card>
@@ -213,7 +167,7 @@ export function KPIEnginePage() {
           <Card>
             <CardHeader>
               <CardTitle>Sales vs Purchases — Monthly Trend</CardTitle>
-              <CardDescription>12-month comparison with margin evolution</CardDescription>
+              <CardDescription>12-month comparison</CardDescription>
             </CardHeader>
             <CardContent>
               {summaryLoading ? (
@@ -238,8 +192,8 @@ export function KPIEnginePage() {
                       </linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                    <XAxis dataKey="month" className="text-xs" tick={{ fontSize: 11 }} />
-                    <YAxis className="text-xs" tickFormatter={v => `${(v / 1000).toFixed(0)}k`} />
+                    <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+                    <YAxis tickFormatter={v => `${(v / 1000).toFixed(0)}k`} tick={{ fontSize: 11 }} />
                     <RechartsTooltip
                       formatter={(v: number) => formatCurrency(v)}
                       contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))' }}
@@ -264,8 +218,8 @@ export function KPIEnginePage() {
                 <ResponsiveContainer width="100%" height={300}>
                   <BarChart data={branchPerformanceData}>
                     <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                    <XAxis dataKey="branch" className="text-xs" tick={{ fontSize: 11 }} />
-                    <YAxis className="text-xs" tickFormatter={v => `${(v / 1000).toFixed(0)}k`} />
+                    <XAxis dataKey="branch" tick={{ fontSize: 11 }} />
+                    <YAxis tickFormatter={v => `${(v / 1000).toFixed(0)}k`} tick={{ fontSize: 11 }} />
                     <RechartsTooltip
                       formatter={(v: number) => formatCurrency(v)}
                       contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))' }}
@@ -298,7 +252,7 @@ export function KPIEnginePage() {
                             <h4 className="font-medium">{t.name}</h4>
                             <p className="text-xs text-muted-foreground">{formatNumber(t.count)} operations</p>
                           </div>
-                          <div className="text-right flex gap-4">
+                          <div className="flex gap-4 text-right">
                             <div>
                               <p className="text-xs text-muted-foreground">In</p>
                               <p className="font-semibold text-green-600">{formatCurrency(t.in)}</p>
@@ -318,7 +272,7 @@ export function KPIEnginePage() {
             </Card>
           )}
 
-          {/* Top Risky Customers (from aging) */}
+          {/* Legacy top-risk */}
           {topRisk.length > 0 && (
             <Card>
               <CardHeader>
@@ -330,15 +284,15 @@ export function KPIEnginePage() {
                   {topRisk.map((item, index) => {
                     const riskColors: Record<string, string> = {
                       critical: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
-                      high: 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200',
-                      medium: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200',
-                      low: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
+                      high:     'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200',
+                      medium:   'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200',
+                      low:      'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
                     };
                     const riskPct: Record<string, number> = { critical: 90, high: 70, medium: 45, low: 20 };
                     const score = riskPct[item.risk_score] ?? 50;
                     return (
                       <div key={item.id} className="flex items-center gap-4 p-4 rounded-lg border hover:bg-accent/50 transition-colors">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-100 dark:bg-red-900 font-bold text-red-600 dark:text-red-400 shrink-0">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-100 dark:bg-red-900 font-bold text-red-600 shrink-0">
                           {index + 1}
                         </div>
                         <div className="flex-1 min-w-0">
@@ -356,9 +310,7 @@ export function KPIEnginePage() {
                           </div>
                           <div className="flex items-center gap-3">
                             <Progress value={score} className="flex-1 h-1.5 [&>div]:bg-red-500" />
-                            <span className="text-xs text-muted-foreground w-10 text-right">
-                              {score}/100
-                            </span>
+                            <span className="text-xs text-muted-foreground w-10 text-right">{score}/100</span>
                           </div>
                         </div>
                       </div>
@@ -368,6 +320,11 @@ export function KPIEnginePage() {
               </CardContent>
             </Card>
           )}
+
+          {/* Credit KPIs */}
+          <div className="mt-6 pt-6 border-t">
+            <CreditKPISection />
+          </div>
         </>
       )}
     </div>

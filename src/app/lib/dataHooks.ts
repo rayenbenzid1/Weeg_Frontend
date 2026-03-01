@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { ApiError } from './api';
+import { ApiError,api } from './api';
 import {
   productsApi,
   customersApi,
   inventoryApi,
+
   transactionsApi,
   agingApi,
   kpiApi,
@@ -50,7 +51,7 @@ function useAsync<T>(
     } catch (err) {
       if (mountedRef.current) {
         if (err instanceof ApiError) {
-          setError(err.userMessage);
+          setError(err.message);
         } else {
           setError(String(err));
         }
@@ -217,3 +218,67 @@ export type {
   KPIData,
   QueryParams,
 };
+
+export interface AgingRow {
+  id: string;
+  account: string;
+  account_code: string;
+  customer_name: string | null;
+  report_date: string;
+  current: number;
+  d1_30: number;
+  d31_60: number;
+  d61_90: number;
+  d91_120: number;
+  d121_150: number;
+  d151_180: number;
+  d181_210: number;
+  d211_240: number;
+  d241_270: number;
+  d271_300: number;
+  d301_330: number;
+  over_330: number;
+  total: number;
+  overdue_total: number;
+  risk_score: 'low' | 'medium' | 'high' | 'critical';
+}
+
+export interface AgingReportResponse {
+  report_date: string | null;
+  count: number;
+  results: AgingRow[];   // ← nom utilisé par AgingReceivablePage
+}
+
+export interface AgingDatesResponse {
+  dates: string[];
+}
+
+// ── useAgingReport ────────────────────────────────────────────────────────────
+// Utilise agingApi.list() qui appelle /aging/ (route qui existe)
+// et mappe "records" → "results" pour AgingReceivablePage
+
+export function useAgingReport(params?: {
+  report_date?: string;
+  limit?: number;
+}) {
+  // agingApi.list() est déjà défini dans dataApi.ts → appelle /aging/
+  const result = useAgingList({
+    report_date: params?.report_date,
+    page_size: params?.limit ?? 500, 
+  } );
+
+  const data: AgingReportResponse | null = result.data
+    ? {
+        report_date: result.data.report_date,
+        count: result.data.count,
+        results: (result.data as any).records ?? [],  // map records → results
+      }
+    : null;
+
+  return {
+    data,
+    loading: result.loading,
+    error: result.error,
+    refetch: result.refetch,
+  };
+}

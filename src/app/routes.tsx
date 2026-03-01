@@ -9,7 +9,7 @@ import { KPIEnginePage } from './pages/KPIEnginePage';
 import { TransactionsPage } from './pages/TransactionsPage';
 import { InventoryPage } from './pages/InventoryPage';
 import { AlertsPage } from './pages/AlertsPage';
-import { AgingPage } from './pages/AgingPage';
+import { AgingReceivablePage  as AgingPage } from './pages/AgingPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { AIInsightsPage } from './pages/AIInsightsPage';
 import { SettingsPage } from './pages/SettingsPage';

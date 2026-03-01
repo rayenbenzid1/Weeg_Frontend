@@ -531,7 +531,72 @@ export const kpiApi = {
     };
   },
 };
+// ─────────────────────────────────────────────────────────────────────────────
+// Add this to src/app/lib/dataApi.ts  (append after the existing kpiApi)
+// ─────────────────────────────────────────────────────────────────────────────
 
+export interface CreditKPIItem {
+  value: number;
+  label: string;
+  unit: string;
+  description: string;
+  numerator?: number;
+  denominator?: number;
+  ca_credit?: number;
+  ca_total?: number;
+  overdue_amount?: number;
+  total_receivables?: number;
+  recovered_amount?: number;
+  total_credit?: number;
+}
+
+export interface RiskyCustomer {
+  id: string;
+  account: string;
+  account_code: string;
+  customer_name: string;
+  total: number;
+  current: number;
+  overdue_total: number;
+  risk_score: 'low' | 'medium' | 'high' | 'critical';
+  overdue_percentage: number;
+  dmp_days: number;
+  buckets: Record<string, number>;
+}
+
+export interface BucketDistributionItem {
+  bucket: string;
+  label: string;
+  amount: number;
+  percentage: number;
+  midpoint_days: number;
+}
+
+export interface CreditKPIData {
+  report_date: string | null;
+  kpis: {
+    taux_clients_credit: CreditKPIItem;
+    taux_credit_total: CreditKPIItem;
+    taux_impayes: CreditKPIItem;
+    dmp: CreditKPIItem;
+    taux_recouvrement: CreditKPIItem;
+  };
+  top5_risky_customers: RiskyCustomer[];
+  bucket_distribution: BucketDistributionItem[];
+  summary: {
+    total_customers: number;
+    credit_customers: number;
+    grand_total_receivables: number;
+    overdue_amount: number;
+    ca_credit: number;
+    ca_total: number;
+  };
+}
+
+export const creditKpiApi = {
+  getAll: (params?: { report_date?: string }) =>
+    api.get<CreditKPIData>(`/kpi/credit/${params?.report_date ? `?report_date=${params.report_date}` : ''}`),
+};
 // ─────────────────────────────────────────────
 // Branches (derived from inventory branch-summary)
 // ─────────────────────────────────────────────
