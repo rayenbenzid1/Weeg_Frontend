@@ -7,15 +7,24 @@ import { DataTable } from '../components/DataTable';
 import { formatCurrency, formatDate } from '../lib/utils';
 import { Eye, ArrowUpRight } from 'lucide-react';
 import axios from 'axios';
+import {
+  MOVEMENT_TYPES,
+  MOVEMENT_TYPE_LABELS,
+  isSaleType,
+  isPurchaseType,
+  getMovementTypeLabel,
+} from '../lib/dataApi';
 
 // ─────────────────────────────────────────────
-// Types alignés avec le backend
+// Types
 // ─────────────────────────────────────────────
 
 interface Movement {
   id: string;
   movement_date: string;
+  /** Raw Arabic label, e.g. "ف بيع" */
   movement_type: string;
+  /** Friendly English label from serializer */
   movement_type_display?: string;
   material_code: string;
   material_name: string;
@@ -39,28 +48,70 @@ interface PaginatedMovements {
   movements: Movement[];
 }
 
-type TransactionWithType = Movement & { type: 'sale' | 'purchase' | 'other' };
+type MovementCategory = 'sale' | 'purchase' | 'other';
+
+type TransactionWithType = Movement & { category: MovementCategory };
+
+/** Derive a UI category from the raw Arabic movement_type */
+function getCategory(movementType: string): MovementCategory {
+  if (isSaleType(movementType)) return 'sale';
+  if (isPurchaseType(movementType)) return 'purchase';
+  return 'other';
+}
+
+// ─────────────────────────────────────────────
+// Badge variant per category
+// ─────────────────────────────────────────────
+
+const CATEGORY_BADGE_VARIANT: Record<MovementCategory, 'default' | 'secondary' | 'outline'> = {
+  sale:     'default',
+  purchase: 'secondary',
+  other:    'outline',
+};
+
+// ─────────────────────────────────────────────
+// Page
+// ─────────────────────────────────────────────
 
 export function TransactionsPage() {
   const [transactions, setTransactions] = useState<TransactionWithType[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Filtres UI (pas encore envoyés au backend)
-  const [selectedPeriod, setSelectedPeriod] = useState('12m');
-  const [selectedBranch, setSelectedBranch] = useState('all');
-  const [selectedProduct, setSelectedProduct] = useState('all');
+  // Available movement types fetched dynamically from the backend
+  const [availableTypes, setAvailableTypes] = useState<string[]>([]);
 
-  const [page, setPage] = useState(1);
-  const pageSize = 20;
+  // Filters
+  const [selectedPeriod, setSelectedPeriod]     = useState('12m');
+  const [selectedBranch, setSelectedBranch]     = useState('all');
+  const [selectedProduct, setSelectedProduct]   = useState('all');
+  const [selectedType, setSelectedType]         = useState('all');
+
+  const [page, setPage]           = useState(1);
+  const pageSize                  = 20;
   const [totalCount, setTotalCount] = useState(0);
 
-  // Statistiques (utilisation des totaux envoyés par le backend quand possible)
-  const [totalSales, setTotalSales] = useState(0);
+  // Summary stats
+  const [totalSales, setTotalSales]         = useState(0);
   const [totalPurchases, setTotalPurchases] = useState(0);
   const [transactionCount, setTransactionCount] = useState(0);
   const [avgTransaction, setAvgTransaction] = useState(0);
 
+  // ── Fetch available movement types once ──────────────────────────────
+  useEffect(() => {
+    const token = localStorage.getItem('fasi_access_token');
+    axios
+      .get<{ movement_types: string[] }>('/api/transactions/movement-types/', {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      })
+      .then(res => setAvailableTypes(res.data.movement_types))
+      .catch(() => {
+        // Fall back to known constants if endpoint is not yet deployed
+        setAvailableTypes(Object.values(MOVEMENT_TYPES));
+      });
+  }, []);
+
+  // ── Fetch transactions ───────────────────────────────────────────────
   useEffect(() => {
     const fetchTransactions = async () => {
       setLoading(true);
@@ -69,46 +120,44 @@ export function TransactionsPage() {
       try {
         const token = localStorage.getItem('fasi_access_token');
 
+        const params: Record<string, any> = {
+          page,
+          page_size: pageSize,
+        };
+
+        // Only send movement_type filter when the user selected a specific type
+        if (selectedType !== 'all') {
+          params.movement_type = selectedType;
+        }
+
+        // TODO: wire up branch, product, period filters when backend supports them
+
         const response = await axios.get<PaginatedMovements>('/api/transactions/', {
-          params: {
-            page,
-            page_size: pageSize,
-            // Tu peux décommenter quand tu actives les filtres côté backend
-            // movement_type: 'sale',           // ou 'purchase', ou rien pour tout
-            // branch_name__icontains: selectedBranch !== 'all' ? selectedBranch : undefined,
-            // search: selectedProduct !== 'all' ? selectedProduct : undefined,
-            // date_from: ... (à calculer selon selectedPeriod)
-          },
+          params,
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         });
 
         const data = response.data;
 
-        // Mapper pour ajouter le type visuel
-        const mapped = data.movements.map((m) => {
-          let type: 'sale' | 'purchase' | 'other' = 'other';
-          if (['sale', 'sales_return'].includes(m.movement_type)) {
-            type = 'sale';
-          } else if (['purchase', 'purchase_return', 'main_entry'].includes(m.movement_type)) {
-            type = 'purchase';
-          }
-          return { ...m, type };
-        });
+        // Enrich with UI category derived from raw Arabic movement_type
+        const mapped: TransactionWithType[] = data.movements.map(m => ({
+          ...m,
+          category: getCategory(m.movement_type),
+        }));
 
-        // Tri par date descendante (optionnel si le backend le fait déjà)
-        mapped.sort((a, b) => new Date(b.movement_date).getTime() - new Date(a.movement_date).getTime());
+        // Sort newest first (backend may already do this, but ensure consistency)
+        mapped.sort(
+          (a, b) => new Date(b.movement_date).getTime() - new Date(a.movement_date).getTime()
+        );
 
         setTransactions(mapped);
         setTotalCount(data.count);
 
-        // Utilisation des totaux globaux envoyés par le backend
-        // (sur tout le queryset filtré, pas seulement la page courante)
-        setTotalSales(data.totals.total_out_value || 0);     // ventes → total_out
-        setTotalPurchases(data.totals.total_in_value || 0);  // achats → total_in
+        setTotalSales(data.totals.total_out_value || 0);
+        setTotalPurchases(data.totals.total_in_value || 0);
         setTransactionCount(data.count);
         setAvgTransaction(
-          (data.totals.total_out_value + data.totals.total_in_value) /
-            (data.count || 1)
+          (data.totals.total_out_value + data.totals.total_in_value) / (data.count || 1)
         );
       } catch (err: any) {
         setError(err.response?.data?.error || err.message || 'Failed to load transactions');
@@ -118,35 +167,29 @@ export function TransactionsPage() {
     };
 
     fetchTransactions();
-  }, [page, selectedPeriod, selectedBranch, selectedProduct]);
+  }, [page, selectedPeriod, selectedBranch, selectedProduct, selectedType]);
 
+  // ── Table columns ────────────────────────────────────────────────────
   const columns = [
     {
       key: 'type',
       label: 'Type',
       render: (row: TransactionWithType) => (
-        <Badge
-          variant={
-            row.type === 'sale'
-              ? 'default'
-              : row.type === 'purchase'
-              ? 'secondary'
-              : 'outline'
-          }
-        >
-          {row.movement_type_display || row.type.charAt(0).toUpperCase() + row.type.slice(1)}
+        <Badge variant={CATEGORY_BADGE_VARIANT[row.category]}>
+          {/* Prefer the serializer-provided display label; fall back to our label map */}
+          {row.movement_type_display || getMovementTypeLabel(row.movement_type)}
         </Badge>
       ),
     },
     {
       key: 'date',
       label: 'Date',
-      render: (row: any) => formatDate(row.movement_date),
+      render: (row: TransactionWithType) => formatDate(row.movement_date),
     },
     {
       key: 'material',
       label: 'Product / Material',
-      render: (row: any) => (
+      render: (row: TransactionWithType) => (
         <div>
           <p className="font-medium">{row.material_name || '—'}</p>
           <p className="text-xs text-muted-foreground">{row.material_code || '—'}</p>
@@ -156,29 +199,29 @@ export function TransactionsPage() {
     {
       key: 'branch',
       label: 'Branch',
-      render: (row: any) => row.branch_name || '—',
+      render: (row: TransactionWithType) => row.branch_name || '—',
     },
     {
       key: 'customer',
       label: 'Customer',
-      render: (row: any) => row.customer_name || '—',
+      render: (row: TransactionWithType) => row.customer_name || '—',
     },
     {
       key: 'qty',
       label: 'Qty In / Out',
-      render: (row: any) => (
+      render: (row: TransactionWithType) => (
         <span>
-          {row.qty_in ? `+${row.qty_in}` : ''}{' '}
-          {row.qty_out ? `-${row.qty_out}` : ''}
+          {row.qty_in  ? `+${row.qty_in}`  : ''}
+          {row.qty_out ? ` -${row.qty_out}` : ''}
         </span>
       ),
     },
     {
       key: 'total',
       label: 'Total',
-      render: (row: any) => (
+      render: (row: TransactionWithType) => (
         <span className="font-semibold">
-          {formatCurrency((row.total_out || row.total_in || 0))}
+          {formatCurrency(row.total_out || row.total_in || 0)}
         </span>
       ),
     },
@@ -191,37 +234,26 @@ export function TransactionsPage() {
         </Badge>
       ),
     },
-    {
-      key: 'actions',
-      label: 'Actions',
-      render: () => (
-        <Button variant="ghost" size="sm">
-          <Eye className="h-4 w-4" />
-        </Button>
-      ),
-    },
   ];
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Sales & Purchases</h1>
-        <p className="text-muted-foreground mt-1">
-          Complete transaction history and analysis
-        </p>
+        <p className="text-muted-foreground mt-1">Complete transaction history and analysis</p>
       </div>
 
-      {/* Filtres */}
+      {/* Filters */}
       <Card>
         <CardHeader>
           <CardTitle>Filters</CardTitle>
           <CardDescription>Customize your transaction view</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-4">
             <div>
               <label className="text-sm font-medium mb-2 block">Period</label>
-              <Select value={selectedPeriod} onValueChange={setSelectedPeriod}>
+              <Select value={selectedPeriod} onValueChange={v => { setSelectedPeriod(v); setPage(1); }}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select period" />
                 </SelectTrigger>
@@ -236,27 +268,43 @@ export function TransactionsPage() {
             </div>
 
             <div>
+              <label className="text-sm font-medium mb-2 block">Movement Type</label>
+              <Select value={selectedType} onValueChange={v => { setSelectedType(v); setPage(1); }}>
+                <SelectTrigger>
+                  <SelectValue placeholder="All Types" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Types</SelectItem>
+                  {availableTypes.map(rawType => (
+                    <SelectItem key={rawType} value={rawType}>
+                      {/* Show English label; Arabic raw value sent to backend */}
+                      {MOVEMENT_TYPE_LABELS[rawType] ?? rawType}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
               <label className="text-sm font-medium mb-2 block">Branch</label>
-              <Select value={selectedBranch} onValueChange={setSelectedBranch}>
+              <Select value={selectedBranch} onValueChange={v => { setSelectedBranch(v); setPage(1); }}>
                 <SelectTrigger>
                   <SelectValue placeholder="All Branches" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Branches</SelectItem>
-                  {/* À remplir dynamiquement via API branches */}
                 </SelectContent>
               </Select>
             </div>
 
             <div>
               <label className="text-sm font-medium mb-2 block">Product</label>
-              <Select value={selectedProduct} onValueChange={setSelectedProduct}>
+              <Select value={selectedProduct} onValueChange={v => { setSelectedProduct(v); setPage(1); }}>
                 <SelectTrigger>
                   <SelectValue placeholder="All Products" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Products</SelectItem>
-                  {/* À remplir dynamiquement via API products */}
                 </SelectContent>
               </Select>
             </div>
@@ -275,7 +323,6 @@ export function TransactionsPage() {
             </p>
           </CardContent>
         </Card>
-
         <Card>
           <CardContent className="p-6">
             <p className="text-sm text-muted-foreground">Total Purchases</p>
@@ -285,15 +332,13 @@ export function TransactionsPage() {
             </p>
           </CardContent>
         </Card>
-
         <Card>
           <CardContent className="p-6">
             <p className="text-sm text-muted-foreground">Transactions</p>
             <p className="text-2xl font-bold mt-2">{transactionCount}</p>
-            <p className="text-xs text-muted-foreground mt-1">Current page</p>
+            <p className="text-xs text-muted-foreground mt-1">Total records</p>
           </CardContent>
         </Card>
-
         <Card>
           <CardContent className="p-6">
             <p className="text-sm text-muted-foreground">Avg Transaction</p>
@@ -308,7 +353,7 @@ export function TransactionsPage() {
       {/* Error */}
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
-          {error}
+          No data available. Please adjust your filters or try again later.
         </div>
       )}
 
@@ -324,11 +369,11 @@ export function TransactionsPage() {
             exportable
             pageSize={pageSize}
           />
-          
-          {/* Custom Pagination Controls */}
+
+          {/* Pagination */}
           <div className="flex items-center justify-between">
             <p className="text-sm text-muted-foreground">
-              Showing page {page} of {Math.ceil(totalCount / pageSize)} ({totalCount} total)
+              Page {page} / {Math.ceil(totalCount / pageSize)} ({totalCount} total)
             </p>
             <div className="flex gap-2">
               <Button

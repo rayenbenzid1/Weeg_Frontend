@@ -15,6 +15,7 @@ import {
 } from 'recharts';
 import { CreditKPISection } from '../components/CreditKPISection';
 import {
+  MOVEMENT_TYPES,
   useKPIs,
   useTransactionSummary,
   useBranchBreakdown,
@@ -22,6 +23,7 @@ import {
   useAgingRisk,
   type MonthlySummaryItem,
 } from '../lib/dataHooks';
+import { getMovementTypeLabel } from '../lib/dataApi';
 import { formatCurrency, formatNumber } from '../lib/utils';
 
 const BRANCH_COLORS = ['#4f46e5', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
@@ -59,8 +61,8 @@ export function KPIEnginePage() {
 
   const { data: kpis, loading: kpiLoading, refetch: refetchKPIs } = useKPIs();
   const { data: summaryRes, loading: summaryLoading } = useTransactionSummary();
-  const { data: branchSalesRes } = useBranchBreakdown({ movement_type: 'sale' });
-  const { data: branchPurchasesRes } = useBranchBreakdown({ movement_type: 'purchase' });
+  const { data: branchSalesRes } = useBranchBreakdown({ movement_type: MOVEMENT_TYPES.SALE });
+  const { data: branchPurchasesRes } = useBranchBreakdown({ movement_type: MOVEMENT_TYPES.PURCHASE });
   const { data: typeBreakdownRes } = useTypeBreakdown();
   const { data: agingRiskRes } = useAgingRisk({ limit: 5 });
 
@@ -84,7 +86,7 @@ export function KPIEnginePage() {
   }));
 
   const typeData = (typeBreakdownRes?.breakdown ?? []).map(t => ({
-    name: t.label, in: t.total_in, out: t.total_out, count: t.count,
+    name: getMovementTypeLabel(t.movement_type) || t.label || t.movement_type, in: t.total_in, out: t.total_out, count: t.count,
   }));
 
   const totalSales = kpis?.totalSalesValue ?? 0;

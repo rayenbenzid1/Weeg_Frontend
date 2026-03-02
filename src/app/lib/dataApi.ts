@@ -3,6 +3,53 @@
 // ─────────────────────────────────────────────
 import { api } from './api';
 
+// ─────────────────────────────────────────────
+// Arabic movement type constants
+// (raw values stored in DB — never use English enum strings with the API)
+// ─────────────────────────────────────────────
+
+export const MOVEMENT_TYPES = {
+  SALE:             'ف بيع',
+  SALE_RETURN:      'مردودات بيع',
+  PURCHASE:         'ف شراء',
+  PURCHASE_RETURN:  'مردودات شراء',
+  MAIN_ENTRY:       'ادخال رئيسي',
+} as const;
+
+export type MovementTypeValue = typeof MOVEMENT_TYPES[keyof typeof MOVEMENT_TYPES];
+
+export const SALE_TYPES: string[]     = [MOVEMENT_TYPES.SALE, MOVEMENT_TYPES.SALE_RETURN];
+export const PURCHASE_TYPES: string[] = [
+  MOVEMENT_TYPES.PURCHASE,
+  MOVEMENT_TYPES.PURCHASE_RETURN,
+  MOVEMENT_TYPES.MAIN_ENTRY,
+];
+
+/** Maps a raw Arabic value to a friendly English display label */
+export const MOVEMENT_TYPE_LABELS: Record<string, string> = {
+  [MOVEMENT_TYPES.SALE]:            'Sale',
+  [MOVEMENT_TYPES.SALE_RETURN]:     'Sales Return',
+  [MOVEMENT_TYPES.PURCHASE]:        'Purchase',
+  [MOVEMENT_TYPES.PURCHASE_RETURN]: 'Purchase Return',
+  [MOVEMENT_TYPES.MAIN_ENTRY]:      'Main Entry',
+};
+
+export function getMovementTypeLabel(rawType: string): string {
+  return MOVEMENT_TYPE_LABELS[rawType] ?? rawType;
+}
+
+export function isSaleType(rawType: string): boolean {
+  return SALE_TYPES.includes(rawType);
+}
+
+export function isPurchaseType(rawType: string): boolean {
+  return PURCHASE_TYPES.includes(rawType);
+}
+
+// ─────────────────────────────────────────────
+// Import Log / Result
+// ─────────────────────────────────────────────
+
 export interface ImportLogEntry {
   id: string;
   file_type: string;
@@ -14,7 +61,6 @@ export interface ImportLogEntry {
   error_details: Array<{ row?: number; error: string }>;
   started_at: string;
   completed_at?: string | null;
-  // Ajoute d'autres champs si besoin (company_name, imported_by_username, etc.)
 }
 
 export interface ImportResult {
@@ -38,16 +84,12 @@ export interface DetectResult {
 }
 
 export const dataImportApi = {
-  /**
-   * Upload Excel file + process import
-   * POST /api/import/upload/
-   */
   uploadFile: async (
     file: File,
     options: {
-      file_type?: string;           // optional override
-      snapshot_date?: string;       // YYYY-MM-DD
-      report_date?: string;         // YYYY-MM-DD
+      file_type?: string;
+      snapshot_date?: string;
+      report_date?: string;
       onProgress?: (progress: number) => void;
     } = {}
   ): Promise<ImportResult> => {
@@ -57,7 +99,7 @@ export const dataImportApi = {
     if (options.snapshot_date) formData.append('snapshot_date', options.snapshot_date);
     if (options.report_date) formData.append('report_date', options.report_date);
 
-    const token = localStorage.getItem('fasi_access_token'); // ou ton nom de clé token
+    const token = localStorage.getItem('fasi_access_token');
 
     const response = await fetch('/api/import/upload/', {
       method: 'POST',
@@ -65,26 +107,18 @@ export const dataImportApi = {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: formData,
-      // Important : NE PAS mettre Content-Type manuellement → le navigateur le gère pour FormData
     });
 
     if (!response.ok) {
       let errorData;
-      try {
-        errorData = await response.json();
-      } catch {
-        errorData = { message: 'Network or server error' };
-      }
+      try { errorData = await response.json(); }
+      catch { errorData = { message: 'Network or server error' }; }
       throw new Error(errorData.message || errorData.error || `Upload failed (${response.status})`);
     }
 
     return response.json();
   },
 
-  /**
-   * Detect file type + get preview (first rows)
-   * POST /api/import/detect/
-   */
   detectFile: async (file: File): Promise<DetectResult> => {
     const formData = new FormData();
     formData.append('file', file);
@@ -107,28 +141,18 @@ export const dataImportApi = {
     return response.json();
   },
 
-  /**
-   * Get list of previous imports (logs)
-   * GET /api/import/logs/
-   */
   getImportLogs: async (params?: { file_type?: string; status?: string }) => {
     const query = new URLSearchParams(params as any).toString();
     const url = `/api/import/logs/${query ? `?${query}` : ''}`;
-
     const token = localStorage.getItem('fasi_access_token');
     const response = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
+      headers: { Authorization: `Bearer ${token}` },
     });
-
     if (!response.ok) throw new Error('Failed to fetch logs');
-    return response.json(); // { count: number, logs: ImportLogEntry[] }
+    return response.json();
   },
 
-  // Optionnel : Download template (si tu implémentes cet endpoint côté backend plus tard)
   downloadTemplate: async (type: string) => {
-    // Exemple si tu ajoutes un endpoint /api/import/template/<type>/
     const token = localStorage.getItem('fasi_access_token');
     const response = await fetch(`/api/import/template/${type}/`, {
       headers: { Authorization: `Bearer ${token}` },
@@ -149,7 +173,7 @@ export interface PaginatedResponse<T> {
   page: number;
   page_size: number;
   total_pages: number;
-  [listKey: string]: any; // products | customers | items | movements | records
+  [listKey: string]: any;
 }
 
 export interface QueryParams {
@@ -331,7 +355,9 @@ export interface Movement {
   material_code: string;
   material_name: string;
   movement_date: string;
+  /** Raw Arabic label as stored in the DB, e.g. "ف بيع" */
   movement_type: string;
+  /** Friendly English label returned by the serializer */
   movement_type_display: string;
   qty_in: number;
   qty_out: number;
@@ -362,7 +388,9 @@ export interface MonthlySummaryItem {
 }
 
 export interface TypeBreakdownItem {
+  /** Raw Arabic movement_type value */
   movement_type: string;
+  /** Friendly English label */
   label: string;
   count: number;
   total_in: number;
@@ -377,6 +405,7 @@ export interface BranchBreakdownItem {
 
 export const transactionsApi = {
   list: (params?: QueryParams & {
+    /** Pass a raw Arabic movement_type value, e.g. MOVEMENT_TYPES.SALE */
     movement_type?: string;
     branch?: string;
     date_from?: string;
@@ -395,10 +424,27 @@ export const transactionsApi = {
       `/transactions/type-breakdown/${qs(params)}`
     ),
 
-  branchBreakdown: (params?: { movement_type?: string; date_from?: string; date_to?: string }) =>
+  /**
+   * Branch breakdown filtered by a raw Arabic movement_type.
+   * Defaults to SALE type if no movement_type is provided.
+   */
+  branchBreakdown: (params?: {
+    /** Raw Arabic value, e.g. MOVEMENT_TYPES.SALE. Defaults to sale type on backend. */
+    movement_type?: string;
+    date_from?: string;
+    date_to?: string;
+  }) =>
     api.get<{ movement_type: string; branches: BranchBreakdownItem[] }>(
       `/transactions/branch-breakdown/${qs(params)}`
     ),
+
+  /**
+   * Returns all distinct movement_type values present in the DB for this company.
+   * Use this to dynamically populate filter dropdowns.
+   * GET /api/transactions/movement-types/
+   */
+  movementTypes: () =>
+    api.get<{ movement_types: string[] }>('/transactions/movement-types/'),
 };
 
 // ─────────────────────────────────────────────
@@ -482,7 +528,7 @@ export const agingApi = {
 };
 
 // ─────────────────────────────────────────────
-// KPI Engine (aggregated from multiple endpoints)
+// KPI Engine
 // ─────────────────────────────────────────────
 
 export interface KPIData {
@@ -494,12 +540,6 @@ export interface KPIData {
 }
 
 export const kpiApi = {
-  /**
-   * Fetches KPIs by combining:
-   *  - transactions/summary (sales, purchases over 12 months)
-   *  - inventory (total stock value)
-   *  - aging (total receivables)
-   */
   async getAll(): Promise<KPIData> {
     const [summaryRes, inventoryRes, agingRes] = await Promise.allSettled([
       transactionsApi.summary(),
@@ -532,9 +572,10 @@ export const kpiApi = {
     };
   },
 };
-// ─────────────────────────────────────────────────────────────────────────────
-// Add this to src/app/lib/dataApi.ts  (append after the existing kpiApi)
-// ─────────────────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────
+// Credit KPI
+// ─────────────────────────────────────────────
 
 export interface CreditKPIItem {
   value: number;
@@ -598,8 +639,9 @@ export const creditKpiApi = {
   getAll: (params?: { report_date?: string }) =>
     api.get<CreditKPIData>(`/kpi/credit/${params?.report_date ? `?report_date=${params.report_date}` : ''}`),
 };
+
 // ─────────────────────────────────────────────
-// Branches (derived from inventory branch-summary)
+// Branches
 // ─────────────────────────────────────────────
 
 export const branchesApi = {

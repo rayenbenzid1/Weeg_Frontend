@@ -1,13 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { ApiError,api } from './api';
+import { ApiError, api } from './api';
 import {
   productsApi,
   customersApi,
   inventoryApi,
-
   transactionsApi,
   agingApi,
   kpiApi,
+  MOVEMENT_TYPES,
   type Product,
   type Customer,
   type InventoryItem,
@@ -130,6 +130,7 @@ export function useCategoryBreakdown(params?: { snapshot_date?: string }) {
 
 export function useTransactions(
   params?: QueryParams & {
+    /** Raw Arabic movement_type, e.g. MOVEMENT_TYPES.SALE */
     movement_type?: string;
     branch?: string;
     date_from?: string;
@@ -149,7 +150,20 @@ export function useTransactionSummary(params?: { year?: number }) {
   );
 }
 
-export function useBranchBreakdown(params?: { movement_type?: string; date_from?: string; date_to?: string }) {
+/**
+ * Branch breakdown filtered by movement type.
+ *
+ * Pass a raw Arabic value as `movement_type`, e.g.:
+ *   useBranchBreakdown({ movement_type: MOVEMENT_TYPES.SALE })
+ *   useBranchBreakdown({ movement_type: MOVEMENT_TYPES.PURCHASE })
+ *
+ * If omitted, the backend defaults to the sale type.
+ */
+export function useBranchBreakdown(params?: {
+  movement_type?: string;
+  date_from?: string;
+  date_to?: string;
+}) {
   return useAsync(
     () => transactionsApi.branchBreakdown(params),
     [JSON.stringify(params)]
@@ -161,6 +175,14 @@ export function useTypeBreakdown(params?: { date_from?: string; date_to?: string
     () => transactionsApi.typeBreakdown(params),
     [JSON.stringify(params)]
   );
+}
+
+/**
+ * Returns all distinct movement_type values (Arabic labels) present in the DB.
+ * Use this to dynamically populate filter <Select> dropdowns on the frontend.
+ */
+export function useMovementTypes() {
+  return useAsync(() => transactionsApi.movementTypes(), []);
 }
 
 // ─────────────────────────────────────────────
@@ -201,7 +223,7 @@ export function useKPIs() {
 }
 
 // ─────────────────────────────────────────────
-// Re-exports of types for use in pages
+// Re-exports
 // ─────────────────────────────────────────────
 
 export type {
@@ -218,6 +240,8 @@ export type {
   KPIData,
   QueryParams,
 };
+
+export { MOVEMENT_TYPES };
 
 export interface AgingRow {
   id: string;
@@ -246,32 +270,27 @@ export interface AgingRow {
 export interface AgingReportResponse {
   report_date: string | null;
   count: number;
-  results: AgingRow[];   // ← nom utilisé par AgingReceivablePage
+  results: AgingRow[];
 }
 
 export interface AgingDatesResponse {
   dates: string[];
 }
 
-// ── useAgingReport ────────────────────────────────────────────────────────────
-// Utilise agingApi.list() qui appelle /aging/ (route qui existe)
-// et mappe "records" → "results" pour AgingReceivablePage
-
 export function useAgingReport(params?: {
   report_date?: string;
   limit?: number;
 }) {
-  // agingApi.list() est déjà défini dans dataApi.ts → appelle /aging/
   const result = useAgingList({
     report_date: params?.report_date,
-    page_size: params?.limit ?? 500, 
-  } );
+    page_size: params?.limit ?? 500,
+  });
 
   const data: AgingReportResponse | null = result.data
     ? {
         report_date: result.data.report_date,
         count: result.data.count,
-        results: (result.data as any).records ?? [],  // map records → results
+        results: (result.data as any).records ?? [],
       }
     : null;
 

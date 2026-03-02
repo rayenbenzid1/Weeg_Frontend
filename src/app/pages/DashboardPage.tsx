@@ -22,6 +22,7 @@ import {
   useBranchSummary,
   useBranchBreakdown,
   useCategoryBreakdown,
+  MOVEMENT_TYPES,
 } from '../lib/dataHooks';
 import { formatCurrency, formatNumber } from '../lib/utils';
 
@@ -75,7 +76,7 @@ export function DashboardPage() {
   const agingDist = useAgingDistribution();
   const agingRisk = useAgingRisk({ limit: 5 });
   const branchStockSummary = useBranchSummary();
-  const branchSales = useBranchBreakdown({ movement_type: 'sale' });
+  const branchSales = useBranchBreakdown({ movement_type: MOVEMENT_TYPES.SALE });
   const categoryBreakdown = useCategoryBreakdown();
 
   // ── KPI derived values ─────────────────────────────────────────────────
