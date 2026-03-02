@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { Package, AlertTriangle, TrendingUp, RefreshCw, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
-import { Tabs, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { Badge } from '../components/ui/badge';
 import { Progress } from '../components/ui/progress';
 import { DataTable } from '../components/DataTable';
@@ -20,83 +19,79 @@ import {
 } from '../lib/dataHooks';
 import { formatCurrency, formatNumber } from '../lib/utils';
 
-// ── Branch columns ───────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Helper: Django DecimalField returns strings like "5.0000" — parse to number
+// ─────────────────────────────────────────────────────────────────────────────
+const toNum = (val: unknown): number => parseFloat(String(val ?? 0)) || 0;
 
-const BRANCH_KEYS: { key: keyof InventoryItem; label: string; valueKey: keyof InventoryItem }[] = [
-  { key: 'qty_alkarimia', label: 'Al-Karimia', valueKey: 'value_alkarimia' },
-  { key: 'qty_benghazi', label: 'Benghazi', valueKey: 'value_alkarimia' }, // adjust if separate
-  { key: 'qty_mazraa', label: 'Mazraa', valueKey: 'value_mazraa' },
-  { key: 'qty_dahmani', label: 'Dahmani', valueKey: 'value_dahmani' },
-  { key: 'qty_janzour', label: 'Janzour', valueKey: 'value_janzour' },
-  { key: 'qty_misrata', label: 'Misrata', valueKey: 'value_misrata' },
+// ── Branch columns ───────────────────────────────────────────────────────────
+
+const BRANCH_KEYS: { key: keyof InventoryItem; label: string }[] = [
+  { key: 'qty_alkarimia', label: 'Al-Karimia' },
+  { key: 'qty_benghazi',  label: 'Benghazi' },
+  { key: 'qty_mazraa',    label: 'Mazraa' },
+  { key: 'qty_dahmani',   label: 'Dahmani' },
+  { key: 'qty_janzour',   label: 'Janzour' },
+  { key: 'qty_misrata',   label: 'Misrata' },
 ];
 
-const BRANCH_COLORS = ['#4f46e5', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
+const BRANCH_COLORS   = ['#4f46e5', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
 const CATEGORY_COLORS = ['#4f46e5', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6'];
 
-function StockStatusBadge({ qty, total }: { qty: number; total: number }) {
-  const pct = total > 0 ? (qty / total) * 100 : 0;
-  if (pct === 0) return <Badge variant="destructive" className="text-xs">Out of Stock</Badge>;
-  if (pct < 10) return <Badge variant="destructive" className="text-xs">🔴 Critical</Badge>;
-  if (pct < 25) return <Badge variant="secondary" className="text-xs bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">🟡 Low</Badge>;
+function StockStatusBadge({ qty }: { qty: number }) {
+  if (qty === 0)  return <Badge variant="destructive" className="text-xs">Out of Stock</Badge>;
+  if (qty < 5)    return <Badge variant="destructive" className="text-xs">🔴 Critical</Badge>;
+  if (qty < 20)   return <Badge variant="secondary" className="text-xs bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">🟡 Low</Badge>;
   return <Badge variant="default" className="text-xs bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">🟢 Normal</Badge>;
 }
 
 export function InventoryPage() {
-  const [selectedDate, setSelectedDate] = useState<string>('');
+  const [selectedDate, setSelectedDate]       = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
-  const [activeBranchTab, setActiveBranchTab] = useState<string>('all');
 
-  // ── Data hooks ─────────────────────────────────────────────────────────
+  // ── Data hooks ─────────────────────────────────────────────────────────────
   const { data: datesData } = useInventoryDates();
-  const dates = datesData?.dates ?? [];
+  const dates      = datesData?.dates ?? [];
   const latestDate = selectedDate || dates[0] || undefined;
 
   const { data: inventoryData, loading: invLoading, error: invError, refetch } = useInventory({
     snapshot_date: latestDate,
-    category: selectedCategory !== 'all' ? selectedCategory : undefined,
-    page_size: 200,
+    category:      selectedCategory !== 'all' ? selectedCategory : undefined,
+    page_size:     200,
   });
 
-  const { data: branchData, loading: branchLoading } = useBranchSummary({
-    snapshot_date: latestDate,
-  });
+  const { data: branchData,   loading: branchLoading } = useBranchSummary({ snapshot_date: latestDate });
+  const { data: categoryData }                          = useCategoryBreakdown({ snapshot_date: latestDate });
 
-  const { data: categoryData } = useCategoryBreakdown({
-    snapshot_date: latestDate,
-  });
-
-  // ── Derived data ──────────────────────────────────────────────────────
-  const items = inventoryData?.items ?? [];
-  const totals = inventoryData?.totals;
-  const branches = branchData?.branches ?? [];
+  // ── Derived data ───────────────────────────────────────────────────────────
+  const items      = inventoryData?.items ?? [];
+  const totals     = inventoryData?.totals;
+  const branches   = branchData?.branches ?? [];
   const categories = categoryData?.categories ?? [];
 
-  // Compute per-branch stats from inventory items
-  const totalQty = totals?.grand_total_qty ?? 0;
-  const totalValue = totals?.grand_total_value ?? 0;
+  const totalQty   = toNum(totals?.grand_total_qty);
+  const totalValue = toNum(totals?.grand_total_value);
 
-  // Low stock items: qty on any branch < 10% of total qty for that product
-  const lowStockItems = items.filter(item => item.total_qty < 5 && item.total_qty > 0);
-  const outOfStockItems = items.filter(item => item.total_qty === 0);
+  // Low / out-of-stock using parsed numbers
+  const lowStockItems    = items.filter(item => toNum(item.total_qty) < 5 && toNum(item.total_qty) > 0);
+  const outOfStockItems  = items.filter(item => toNum(item.total_qty) === 0);
 
-  // Category pie data
+  // Chart data — parse branch totals too (branchSummary view already returns floats, but guard anyway)
   const categoryPieData = categories.slice(0, 8).map((c, i) => ({
-    name: c.category || 'Uncategorized',
-    value: c.total_value,
-    qty: c.total_qty,
-    fill: CATEGORY_COLORS[i % CATEGORY_COLORS.length],
+    name:  c.category || 'Uncategorized',
+    value: toNum(c.total_value),
+    qty:   toNum(c.total_qty),
+    fill:  CATEGORY_COLORS[i % CATEGORY_COLORS.length],
   }));
 
-  // Branch bar data
   const branchBarData = branches.map((b, i) => ({
-    name: b.branch,
-    qty: b.total_qty,
-    value: b.total_value,
-    fill: BRANCH_COLORS[i % BRANCH_COLORS.length],
+    name:  b.branch,
+    qty:   toNum(b.total_qty),
+    value: toNum(b.total_value),
+    fill:  BRANCH_COLORS[i % BRANCH_COLORS.length],
   }));
 
-  // Table columns
+  // ── Table columns ──────────────────────────────────────────────────────────
   const columns = [
     {
       key: 'product_code',
@@ -111,9 +106,7 @@ export function InventoryPage() {
       render: (row: InventoryItem) => (
         <div>
           <p className="font-medium text-sm">{row.product_name}</p>
-          {row.category && (
-            <p className="text-xs text-muted-foreground">{row.category}</p>
-          )}
+          {row.category && <p className="text-xs text-muted-foreground">{row.category}</p>}
         </div>
       ),
     },
@@ -121,45 +114,45 @@ export function InventoryPage() {
       key: 'total_qty',
       label: 'Total Qty',
       render: (row: InventoryItem) => (
-        <span className="font-semibold">{formatNumber(row.total_qty)}</span>
+        <span className="font-semibold">{formatNumber(toNum(row.total_qty))}</span>
       ),
     },
     {
       key: 'total_value',
       label: 'Total Value',
       render: (row: InventoryItem) => (
-        <span className="font-semibold text-indigo-600">{formatCurrency(row.total_value)}</span>
+        <span className="font-semibold text-indigo-600">{formatCurrency(toNum(row.total_value))}</span>
       ),
     },
     {
       key: 'cost_price',
       label: 'Cost Price',
-      render: (row: InventoryItem) => formatCurrency(row.cost_price),
+      render: (row: InventoryItem) => formatCurrency(toNum(row.cost_price)),
     },
     {
       key: 'status',
       label: 'Status',
-      render: (row: InventoryItem) => (
-        <StockStatusBadge qty={row.total_qty} total={row.total_qty > 0 ? row.total_qty : 1} />
-      ),
+      render: (row: InventoryItem) => <StockStatusBadge qty={toNum(row.total_qty)} />,
     },
-    // Per-branch quantities
+    // ── Per-branch quantities ─────────────────────────────────────────────────
     ...BRANCH_KEYS.map(b => ({
       key: b.key as string,
       label: b.label,
       render: (row: InventoryItem) => {
-        const val = row[b.key] as number;
+        const val = toNum(row[b.key]);
         return (
-          <span className={val === 0 ? 'text-muted-foreground' : 'font-medium'}>
-            {formatNumber(val)}
+          <span className={val === 0 ? 'text-muted-foreground text-xs' : 'font-medium'}>
+            {val === 0 ? '—' : formatNumber(val)}
           </span>
         );
       },
     })),
   ];
 
+  // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-6">
+
       {/* Header */}
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
@@ -206,9 +199,7 @@ export function InventoryPage() {
             <div>
               <label className="text-sm font-medium mb-2 block">Category</label>
               <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
+                <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Categories</SelectItem>
                   {categories.map(c => (
@@ -262,7 +253,9 @@ export function InventoryPage() {
             <AlertTriangle className="h-4 w-4 text-red-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-red-600">{invLoading ? '…' : lowStockItems.length + outOfStockItems.length}</div>
+            <div className="text-2xl font-bold text-red-600">
+              {invLoading ? '…' : lowStockItems.length + outOfStockItems.length}
+            </div>
             <p className="text-xs text-muted-foreground mt-1">
               {outOfStockItems.length} out of stock · {lowStockItems.length} low
             </p>
@@ -274,15 +267,14 @@ export function InventoryPage() {
       {!branchLoading && branches.length > 0 && (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {branches.map((branch, i) => {
-            const pct = totalValue > 0 ? (branch.total_value / totalValue) * 100 : 0;
+            const branchValue = toNum(branch.total_value);
+            const branchQty   = toNum(branch.total_qty);
+            const pct = totalValue > 0 ? (branchValue / totalValue) * 100 : 0;
             return (
               <Card key={branch.branch}>
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base flex items-center gap-2">
-                    <span
-                      className="w-3 h-3 rounded-full"
-                      style={{ background: BRANCH_COLORS[i % BRANCH_COLORS.length] }}
-                    />
+                    <span className="w-3 h-3 rounded-full" style={{ background: BRANCH_COLORS[i % BRANCH_COLORS.length] }} />
                     {branch.branch}
                   </CardTitle>
                 </CardHeader>
@@ -290,11 +282,11 @@ export function InventoryPage() {
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <p className="text-xs text-muted-foreground">Stock Value</p>
-                      <p className="text-lg font-bold">{formatCurrency(branch.total_value)}</p>
+                      <p className="text-lg font-bold">{formatCurrency(branchValue)}</p>
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground">Total Qty</p>
-                      <p className="text-lg font-bold">{formatNumber(branch.total_qty)}</p>
+                      <p className="text-lg font-bold">{formatNumber(branchQty)}</p>
                     </div>
                   </div>
                   <div>
@@ -313,7 +305,6 @@ export function InventoryPage() {
 
       {/* Charts row */}
       <div className="grid gap-6 md:grid-cols-2">
-        {/* Branch bar chart */}
         <Card>
           <CardHeader>
             <CardTitle>Stock Value by Branch</CardTitle>
@@ -323,8 +314,8 @@ export function InventoryPage() {
             <ResponsiveContainer width="100%" height={280}>
               <BarChart data={branchBarData}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                <XAxis dataKey="name" className="text-xs" tick={{ fontSize: 11 }} />
-                <YAxis className="text-xs" tickFormatter={v => formatCurrency(v).replace('$', '')} />
+                <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                <YAxis tickFormatter={v => formatCurrency(v).replace('$', '')} />
                 <Tooltip
                   formatter={(v: number) => formatCurrency(v)}
                   contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))' }}
@@ -335,7 +326,6 @@ export function InventoryPage() {
           </CardContent>
         </Card>
 
-        {/* Category pie chart */}
         <Card>
           <CardHeader>
             <CardTitle>Stock by Category</CardTitle>
@@ -347,10 +337,8 @@ export function InventoryPage() {
                 <PieChart>
                   <Pie
                     data={categoryPieData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={55}
-                    outerRadius={90}
+                    cx="50%" cy="50%"
+                    innerRadius={55} outerRadius={90}
                     paddingAngle={2}
                     dataKey="value"
                   >
@@ -377,24 +365,18 @@ export function InventoryPage() {
       {/* Inventory Table */}
       <Card>
         <CardHeader>
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <CardTitle>Inventory Details</CardTitle>
-              <CardDescription>
-                Complete inventory across all branches
-                {latestDate && ` — Snapshot: ${latestDate}`}
-              </CardDescription>
-            </div>
-          </div>
+          <CardTitle>Inventory Details</CardTitle>
+          <CardDescription>
+            Complete inventory across all branches
+            {latestDate && ` — Snapshot: ${latestDate}`}
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {invError ? (
             <div className="text-center py-12 text-red-500">
               <AlertTriangle className="h-8 w-8 mx-auto mb-2" />
               <p>{invError}</p>
-              <Button variant="outline" size="sm" className="mt-3" onClick={refetch}>
-                Retry
-              </Button>
+              <Button variant="outline" size="sm" className="mt-3" onClick={refetch}>Retry</Button>
             </div>
           ) : invLoading ? (
             <div className="flex items-center justify-center py-12">

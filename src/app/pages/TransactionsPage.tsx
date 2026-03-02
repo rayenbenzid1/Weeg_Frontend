@@ -1,39 +1,86 @@
 import { useState, useEffect } from 'react';
-import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { DataTable } from '../components/DataTable';
-import { formatCurrency, formatDate } from '../lib/utils';
-import { Eye, ArrowUpRight } from 'lucide-react';
+import { formatCurrency, formatDate, formatNumber } from '../lib/utils';
+import { ArrowUpRight, ArrowDownLeft, ArrowLeftRight, Loader2, AlertTriangle } from 'lucide-react';
 import axios from 'axios';
 import {
   MOVEMENT_TYPES,
   MOVEMENT_TYPE_LABELS,
   isSaleType,
   isPurchaseType,
-  getMovementTypeLabel,
 } from '../lib/dataApi';
 
-// ─────────────────────────────────────────────
-// Types
-// ─────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Helper — Django DecimalField → string ("1.0000"). Toujours parser avant usage.
+// ─────────────────────────────────────────────────────────────────────────────
+const toNum = (val: unknown): number => parseFloat(String(val ?? 0)) || 0;
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Labels étendus — couvre TOUS les types présents dans les données réelles
+// ─────────────────────────────────────────────────────────────────────────────
+const ALL_LABELS: Record<string, string> = {
+  ...MOVEMENT_TYPE_LABELS,
+  'ف تسوية المخ': 'Inventory Adjustment',
+  'نقل':           'Stock Transfer',
+  'ف.أول المدة':   'Opening Balance',
+  'اخراج رئيسي':  'Main Exit',
+  'مردود شراء':    'Purchase Return',
+};
+
+function getLabel(rawType: string): string {
+  return ALL_LABELS[rawType] ?? rawType;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Catégories UI — 5 types distincts pour le color-coding
+// ─────────────────────────────────────────────────────────────────────────────
+type MovementCategory = 'sale' | 'purchase' | 'transfer' | 'adjustment' | 'other';
+
+function getCategory(movementType: string): MovementCategory {
+  if (isSaleType(movementType))         return 'sale';
+  if (isPurchaseType(movementType))     return 'purchase';
+  if (movementType === 'نقل')            return 'transfer';
+  if (movementType === 'ف تسوية المخ')  return 'adjustment';
+  return 'other';
+}
+
+const BADGE_STYLE: Record<MovementCategory, string> = {
+  sale:       'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
+  purchase:   'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
+  transfer:   'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',
+  adjustment: 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200',
+  other:      'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300',
+};
+
+const CATEGORY_LABEL: Record<MovementCategory, string> = {
+  sale: 'Sale',
+  purchase: 'Purchase',
+  transfer: 'Stock Transfer',
+  adjustment: 'Inventory Adjustment',
+  other: 'Other',
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Types
+// ─────────────────────────────────────────────────────────────────────────────
 interface Movement {
   id: string;
   movement_date: string;
-  /** Raw Arabic label, e.g. "ف بيع" */
   movement_type: string;
-  /** Friendly English label from serializer */
   movement_type_display?: string;
   material_code: string;
   material_name: string;
-  qty_in?: number;
-  qty_out?: number;
-  total_in?: number;
-  total_out?: number;
-  branch_name?: string;
-  customer_name?: string;
+  // Django DecimalField → sérialisé en string ("1.0000")
+  qty_in:        number | string;
+  qty_out:       number | string;
+  total_in:      number | string;
+  total_out:     number | string;
+  balance_price: number | string;
+  branch_name?:  string | null;
+  customer_name?: string | null;
 }
 
 interface PaginatedMovements {
@@ -41,63 +88,36 @@ interface PaginatedMovements {
   page: number;
   page_size: number;
   total_pages: number;
-  totals: {
-    total_in_value: number;
-    total_out_value: number;
-  };
+  totals: { total_in_value: number; total_out_value: number };
   movements: Movement[];
 }
 
-type MovementCategory = 'sale' | 'purchase' | 'other';
-
 type TransactionWithType = Movement & { category: MovementCategory };
 
-/** Derive a UI category from the raw Arabic movement_type */
-function getCategory(movementType: string): MovementCategory {
-  if (isSaleType(movementType)) return 'sale';
-  if (isPurchaseType(movementType)) return 'purchase';
-  return 'other';
-}
-
-// ─────────────────────────────────────────────
-// Badge variant per category
-// ─────────────────────────────────────────────
-
-const CATEGORY_BADGE_VARIANT: Record<MovementCategory, 'default' | 'secondary' | 'outline'> = {
-  sale:     'default',
-  purchase: 'secondary',
-  other:    'outline',
-};
-
-// ─────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
 // Page
-// ─────────────────────────────────────────────
-
+// ─────────────────────────────────────────────────────────────────────────────
 export function TransactionsPage() {
-  const [transactions, setTransactions] = useState<TransactionWithType[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  // Available movement types fetched dynamically from the backend
+  const [transactions, setTransactions]     = useState<TransactionWithType[]>([]);
+  const [loading, setLoading]               = useState(true);
+  const [error, setError]                   = useState<string | null>(null);
   const [availableTypes, setAvailableTypes] = useState<string[]>([]);
 
   // Filters
-  const [selectedPeriod, setSelectedPeriod]     = useState('12m');
-  const [selectedBranch, setSelectedBranch]     = useState('all');
-  const [selectedProduct, setSelectedProduct]   = useState('all');
-  const [selectedType, setSelectedType]         = useState('all');
+  const [selectedPeriod, setSelectedPeriod]   = useState('12m');
+  const [selectedBranch, setSelectedBranch]   = useState('all');
+  const [selectedProduct, setSelectedProduct] = useState('all');
+  const [selectedType, setSelectedType]       = useState('all');
 
   const [page, setPage]           = useState(1);
   const pageSize                  = 20;
   const [totalCount, setTotalCount] = useState(0);
 
-  // Summary stats
-  const [totalSales, setTotalSales]         = useState(0);
-  const [totalPurchases, setTotalPurchases] = useState(0);
-  const [transactionCount, setTransactionCount] = useState(0);
-  const [avgTransaction, setAvgTransaction] = useState(0);
+  // Totaux globaux (déjà des numbers dans data.totals, pas des DecimalField strings)
+  const [totalIn, setTotalIn]   = useState(0);
+  const [totalOut, setTotalOut] = useState(0);
 
-  // ── Fetch available movement types once ──────────────────────────────
+  // ── Fetch movement types une seule fois ───────────────────────────────
   useEffect(() => {
     const token = localStorage.getItem('fasi_access_token');
     axios
@@ -105,60 +125,38 @@ export function TransactionsPage() {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       })
       .then(res => setAvailableTypes(res.data.movement_types))
-      .catch(() => {
-        // Fall back to known constants if endpoint is not yet deployed
-        setAvailableTypes(Object.values(MOVEMENT_TYPES));
-      });
+      .catch(() => setAvailableTypes(Object.values(MOVEMENT_TYPES)));
   }, []);
 
-  // ── Fetch transactions ───────────────────────────────────────────────
+  // ── Fetch transactions ────────────────────────────────────────────────
   useEffect(() => {
     const fetchTransactions = async () => {
       setLoading(true);
       setError(null);
-
       try {
         const token = localStorage.getItem('fasi_access_token');
+        const params: Record<string, any> = { page, page_size: pageSize };
+        if (selectedType !== 'all') params.movement_type = selectedType;
+        // TODO: brancher branch, product, period quand le backend les supporte
 
-        const params: Record<string, any> = {
-          page,
-          page_size: pageSize,
-        };
-
-        // Only send movement_type filter when the user selected a specific type
-        if (selectedType !== 'all') {
-          params.movement_type = selectedType;
-        }
-
-        // TODO: wire up branch, product, period filters when backend supports them
-
-        const response = await axios.get<PaginatedMovements>('/api/transactions/', {
+        const { data } = await axios.get<PaginatedMovements>('/api/transactions/', {
           params,
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         });
 
-        const data = response.data;
-
-        // Enrich with UI category derived from raw Arabic movement_type
         const mapped: TransactionWithType[] = data.movements.map(m => ({
           ...m,
           category: getCategory(m.movement_type),
         }));
 
-        // Sort newest first (backend may already do this, but ensure consistency)
         mapped.sort(
           (a, b) => new Date(b.movement_date).getTime() - new Date(a.movement_date).getTime()
         );
 
         setTransactions(mapped);
         setTotalCount(data.count);
-
-        setTotalSales(data.totals.total_out_value || 0);
-        setTotalPurchases(data.totals.total_in_value || 0);
-        setTransactionCount(data.count);
-        setAvgTransaction(
-          (data.totals.total_out_value + data.totals.total_in_value) / (data.count || 1)
-        );
+        setTotalIn(toNum(data.totals.total_in_value));
+        setTotalOut(toNum(data.totals.total_out_value));
       } catch (err: any) {
         setError(err.response?.data?.error || err.message || 'Failed to load transactions');
       } finally {
@@ -169,81 +167,155 @@ export function TransactionsPage() {
     fetchTransactions();
   }, [page, selectedPeriod, selectedBranch, selectedProduct, selectedType]);
 
-  // ── Table columns ────────────────────────────────────────────────────
+  const totalPages = Math.ceil(totalCount / pageSize);
+  const netFlow    = totalIn - totalOut;
+
+  // ── Colonnes du tableau ────────────────────────────────────────────────
   const columns = [
     {
-      key: 'type',
+      key: 'movement_type',
       label: 'Type',
       render: (row: TransactionWithType) => (
-        <Badge variant={CATEGORY_BADGE_VARIANT[row.category]}>
-          {/* Prefer the serializer-provided display label; fall back to our label map */}
-          {row.movement_type_display || getMovementTypeLabel(row.movement_type)}
-        </Badge>
+        <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap ${BADGE_STYLE[row.category]}`}>
+          {row.movement_type_display || getLabel(row.movement_type)}
+        </span>
       ),
     },
     {
-      key: 'date',
+      key: 'movement_date',
       label: 'Date',
-      render: (row: TransactionWithType) => formatDate(row.movement_date),
+      render: (row: TransactionWithType) => (
+        <span className="text-sm text-muted-foreground whitespace-nowrap">
+          {formatDate(row.movement_date)}
+        </span>
+      ),
     },
     {
-      key: 'material',
+      key: 'material_name',
       label: 'Product / Material',
       render: (row: TransactionWithType) => (
-        <div>
-          <p className="font-medium">{row.material_name || '—'}</p>
-          <p className="text-xs text-muted-foreground">{row.material_code || '—'}</p>
+        <div className="max-w-[240px]">
+          <p className="font-medium text-sm truncate" title={row.material_name}>
+            {row.material_name || '—'}
+          </p>
+          <p className="text-xs text-muted-foreground font-mono">{row.material_code || '—'}</p>
         </div>
       ),
     },
     {
-      key: 'branch',
+      key: 'branch_name',
       label: 'Branch',
-      render: (row: TransactionWithType) => row.branch_name || '—',
+      render: (row: TransactionWithType) => (
+        <span className="text-sm">{row.branch_name || '—'}</span>
+      ),
     },
     {
-      key: 'customer',
+      key: 'customer_name',
       label: 'Customer',
-      render: (row: TransactionWithType) => row.customer_name || '—',
+      render: (row: TransactionWithType) => (
+        <span className="text-sm text-muted-foreground">{row.customer_name || '—'}</span>
+      ),
     },
     {
       key: 'qty',
       label: 'Qty In / Out',
-      render: (row: TransactionWithType) => (
-        <span>
-          {row.qty_in  ? `+${row.qty_in}`  : ''}
-          {row.qty_out ? ` -${row.qty_out}` : ''}
-        </span>
-      ),
+      render: (row: TransactionWithType) => {
+        const qIn  = toNum(row.qty_in);
+        const qOut = toNum(row.qty_out);
+        return (
+          <div className="text-sm font-mono whitespace-nowrap">
+            {qIn  > 0 && <span className="text-green-600 font-semibold">+{formatNumber(qIn)}</span>}
+            {qIn  > 0 && qOut > 0 && <span className="text-muted-foreground mx-1">/</span>}
+            {qOut > 0 && <span className="text-red-500 font-semibold">-{formatNumber(qOut)}</span>}
+            {qIn === 0 && qOut === 0 && <span className="text-muted-foreground">—</span>}
+          </div>
+        );
+      },
     },
     {
-      key: 'total',
-      label: 'Total',
-      render: (row: TransactionWithType) => (
-        <span className="font-semibold">
-          {formatCurrency(row.total_out || row.total_in || 0)}
-        </span>
-      ),
+      key: 'total_in',
+      label: 'Value In',
+      render: (row: TransactionWithType) => {
+        const v = toNum(row.total_in);
+        return v > 0
+          ? <span className="text-green-600 font-semibold text-sm">{formatCurrency(v)}</span>
+          : <span className="text-muted-foreground text-xs">—</span>;
+      },
     },
     {
-      key: 'status',
-      label: 'Status',
-      render: () => (
-        <Badge variant="outline" className="bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-400">
-          Completed
-        </Badge>
-      ),
+      key: 'total_out',
+      label: 'Value Out',
+      render: (row: TransactionWithType) => {
+        const v = toNum(row.total_out);
+        return v > 0
+          ? <span className="text-red-500 font-semibold text-sm">{formatCurrency(v)}</span>
+          : <span className="text-muted-foreground text-xs">—</span>;
+      },
+    },
+    {
+      key: 'balance_price',
+      label: 'Unit Price',
+      render: (row: TransactionWithType) => {
+        const v = toNum(row.balance_price);
+        return v > 0
+          ? <span className="text-sm">{formatCurrency(v)}</span>
+          : <span className="text-muted-foreground text-xs">—</span>;
+      },
     },
   ];
 
+  // ── Rendu ──────────────────────────────────────────────────────────────
   return (
     <div className="space-y-6">
+
+      {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Sales & Purchases</h1>
-        <p className="text-muted-foreground mt-1">Complete transaction history and analysis</p>
+        <h1 className="text-3xl font-bold tracking-tight">Transactions</h1>
+        <p className="text-muted-foreground mt-1">Complete movement history across all branches</p>
       </div>
 
-      {/* Filters */}
+      {/* KPI Cards */}
+      <div className="grid gap-4 md:grid-cols-4">
+        <Card>
+          <CardContent className="p-6">
+            <p className="text-xs text-muted-foreground uppercase tracking-wide">Total Value In</p>
+            <p className="text-2xl font-bold mt-1 text-green-600">{formatCurrency(totalIn)}</p>
+            <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+              <ArrowDownLeft className="h-3 w-3 text-green-600" /> Purchases &amp; entries
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-6">
+            <p className="text-xs text-muted-foreground uppercase tracking-wide">Total Value Out</p>
+            <p className="text-2xl font-bold mt-1 text-red-500">{formatCurrency(totalOut)}</p>
+            <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+              <ArrowUpRight className="h-3 w-3 text-red-500" /> Sales &amp; exits
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-6">
+            <p className="text-xs text-muted-foreground uppercase tracking-wide">Total Movements</p>
+            <p className="text-2xl font-bold mt-1">{formatNumber(totalCount)}</p>
+            <p className="text-xs text-muted-foreground mt-1">Across all types</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-6">
+            <p className="text-xs text-muted-foreground uppercase tracking-wide">Net Flow</p>
+            <p className={`text-2xl font-bold mt-1 ${netFlow >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+              {netFlow >= 0 ? '+' : '-'}{formatCurrency(Math.abs(netFlow))}
+            </p>
+            <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+              <ArrowLeftRight className="h-3 w-3" />
+              {netFlow >= 0 ? 'Net positive' : 'Net negative'}
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Filtres */}
       <Card>
         <CardHeader>
           <CardTitle>Filters</CardTitle>
@@ -254,9 +326,7 @@ export function TransactionsPage() {
             <div>
               <label className="text-sm font-medium mb-2 block">Period</label>
               <Select value={selectedPeriod} onValueChange={v => { setSelectedPeriod(v); setPage(1); }}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select period" />
-                </SelectTrigger>
+                <SelectTrigger><SelectValue placeholder="Select period" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="1m">Last Month</SelectItem>
                   <SelectItem value="3m">Last 3 Months</SelectItem>
@@ -270,15 +340,12 @@ export function TransactionsPage() {
             <div>
               <label className="text-sm font-medium mb-2 block">Movement Type</label>
               <Select value={selectedType} onValueChange={v => { setSelectedType(v); setPage(1); }}>
-                <SelectTrigger>
-                  <SelectValue placeholder="All Types" />
-                </SelectTrigger>
+                <SelectTrigger><SelectValue placeholder="All Types" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Types</SelectItem>
                   {availableTypes.map(rawType => (
                     <SelectItem key={rawType} value={rawType}>
-                      {/* Show English label; Arabic raw value sent to backend */}
-                      {MOVEMENT_TYPE_LABELS[rawType] ?? rawType}
+                      {getLabel(rawType)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -288,9 +355,7 @@ export function TransactionsPage() {
             <div>
               <label className="text-sm font-medium mb-2 block">Branch</label>
               <Select value={selectedBranch} onValueChange={v => { setSelectedBranch(v); setPage(1); }}>
-                <SelectTrigger>
-                  <SelectValue placeholder="All Branches" />
-                </SelectTrigger>
+                <SelectTrigger><SelectValue placeholder="All Branches" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Branches</SelectItem>
                 </SelectContent>
@@ -300,9 +365,7 @@ export function TransactionsPage() {
             <div>
               <label className="text-sm font-medium mb-2 block">Product</label>
               <Select value={selectedProduct} onValueChange={v => { setSelectedProduct(v); setPage(1); }}>
-                <SelectTrigger>
-                  <SelectValue placeholder="All Products" />
-                </SelectTrigger>
+                <SelectTrigger><SelectValue placeholder="All Products" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Products</SelectItem>
                 </SelectContent>
@@ -312,54 +375,30 @@ export function TransactionsPage() {
         </CardContent>
       </Card>
 
-      {/* Summary Cards */}
-      <div className="grid gap-6 md:grid-cols-4">
-        <Card>
-          <CardContent className="p-6">
-            <p className="text-sm text-muted-foreground">Total Sales</p>
-            <p className="text-2xl font-bold mt-2">{formatCurrency(totalSales)}</p>
-            <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
-              <ArrowUpRight className="h-3 w-3" /> vs last period
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-6">
-            <p className="text-sm text-muted-foreground">Total Purchases</p>
-            <p className="text-2xl font-bold mt-2">{formatCurrency(totalPurchases)}</p>
-            <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
-              <ArrowUpRight className="h-3 w-3" /> vs last period
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-6">
-            <p className="text-sm text-muted-foreground">Transactions</p>
-            <p className="text-2xl font-bold mt-2">{transactionCount}</p>
-            <p className="text-xs text-muted-foreground mt-1">Total records</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-6">
-            <p className="text-sm text-muted-foreground">Avg Transaction</p>
-            <p className="text-2xl font-bold mt-2">{formatCurrency(avgTransaction)}</p>
-            <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
-              <ArrowUpRight className="h-3 w-3" /> vs last period
-            </p>
-          </CardContent>
-        </Card>
+      {/* Légende des types */}
+      <div className="flex flex-wrap gap-2 items-center">
+        <span className="text-xs text-muted-foreground">Legend:</span>
+        {(Object.keys(CATEGORY_LABEL) as MovementCategory[]).map(cat => (
+          <span key={cat} className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${BADGE_STYLE[cat]}`}>
+            {CATEGORY_LABEL[cat]}
+          </span>
+        ))}
       </div>
 
-      {/* Error */}
+      {/* Erreur */}
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
-          No data available. Please adjust your filters or try again later.
+        <div className="flex items-center gap-3 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md dark:bg-red-950 dark:border-red-800 dark:text-red-400">
+          <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+          <span className="text-sm">{error}</span>
         </div>
       )}
 
-      {/* Table */}
+      {/* Tableau */}
       {loading ? (
-        <div className="text-center py-12 text-muted-foreground">Loading transactions...</div>
+        <div className="flex items-center justify-center py-16 text-muted-foreground gap-3">
+          <Loader2 className="h-6 w-6 animate-spin" />
+          Loading transactions...
+        </div>
       ) : (
         <div className="space-y-4">
           <DataTable
@@ -371,24 +410,22 @@ export function TransactionsPage() {
           />
 
           {/* Pagination */}
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between pt-1">
             <p className="text-sm text-muted-foreground">
-              Page {page} / {Math.ceil(totalCount / pageSize)} ({totalCount} total)
+              Page {page} of {totalPages} — {formatNumber(totalCount)} total movements
             </p>
             <div className="flex gap-2">
               <Button
-                variant="outline"
-                size="sm"
+                variant="outline" size="sm"
                 onClick={() => setPage(p => Math.max(1, p - 1))}
-                disabled={page === 1}
+                disabled={page === 1 || loading}
               >
                 Previous
               </Button>
               <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setPage(p => Math.min(Math.ceil(totalCount / pageSize), p + 1))}
-                disabled={page >= Math.ceil(totalCount / pageSize)}
+                variant="outline" size="sm"
+                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                disabled={page >= totalPages || loading}
               >
                 Next
               </Button>

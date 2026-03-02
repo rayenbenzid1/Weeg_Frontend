@@ -287,20 +287,21 @@ export interface InventoryItem {
   product_code: string;
   product_name: string;
   category: string | null;
-  qty_alkarimia: number;
-  qty_benghazi: number;
-  qty_mazraa: number;
-  qty_dahmani: number;
-  qty_janzour: number;
-  qty_misrata: number;
-  value_alkarimia: number;
-  value_mazraa: number;
-  value_dahmani: number;
-  value_janzour: number;
-  value_misrata: number;
-  total_qty: number;
-  cost_price: number;
-  total_value: number;
+  // Django DecimalField → serialized as strings ("5.0000"). Use toNum() before display.
+  qty_alkarimia: number | string;
+  qty_benghazi: number | string;
+  qty_mazraa: number | string;
+  qty_dahmani: number | string;
+  qty_janzour: number | string;
+  qty_misrata: number | string;
+  value_alkarimia: number | string;
+  value_mazraa: number | string;
+  value_dahmani: number | string;
+  value_janzour: number | string;
+  value_misrata: number | string;
+  total_qty: number | string;
+  cost_price: number | string;
+  total_value: number | string;
 }
 
 export interface InventoryListResponse {
