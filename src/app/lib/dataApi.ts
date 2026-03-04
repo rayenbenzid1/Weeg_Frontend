@@ -703,6 +703,76 @@ export interface SalesVelocityProduct {
   total_qty: number;
 }
 
+interface SalesKPIRawProduct {
+  material_code?: string;
+  material_name?: string;
+  total_revenue?: number | string;
+  revenue?: number | string;
+  total_qty?: number | string;
+  transaction_count?: number | string;
+  revenue_share?: number | string;
+  margin_pct?: number | string;
+  rotation_rate?: number | string;
+  coverage_days?: number | string | null;
+}
+
+interface SalesKPIRawClient {
+  customer_name?: string;
+  total_revenue?: number | string;
+  transaction_count?: number | string;
+  revenue_share?: number | string;
+}
+
+interface SalesKPIRawMonthly {
+  year?: number | string;
+  month?: number | string;
+  month_label?: string;
+  total_revenue?: number | string;
+  total_qty?: number | string;
+  count?: number | string;
+}
+
+interface SalesKPIRawVelocityProduct {
+  material_code?: string;
+  material_name?: string;
+  avg_daily_revenue?: number | string;
+  avg_daily_qty?: number | string;
+  days_to_sell_100?: number | string;
+  days_to_sell_100_units?: number | string;
+  total_qty?: number | string;
+}
+
+interface SalesKPIRawData {
+  year?: number | string;
+  period?: { from?: string; to?: string };
+  period_from?: string | null;
+  period_to?: string | null;
+  ca?: {
+    total?: number | string;
+    previous?: number | string;
+    label?: string;
+    unit?: string;
+  };
+  sales_evolution?: {
+    value?: number | string | null;
+    is_up?: boolean | null;
+    label?: string;
+    unit?: string;
+    description?: string;
+  };
+  top_products?: SalesKPIRawProduct[];
+  monthly_sales?: SalesKPIRawMonthly[];
+  product_margins?: SalesKPIRawProduct[];
+  top_clients?: SalesKPIRawClient[];
+  sales_velocity?: {
+    avg_daily_revenue?: number | string;
+    avg_daily_qty?: number | string;
+    n_days?: number | string;
+    total_days?: number | string;
+    by_product?: SalesKPIRawVelocityProduct[];
+  };
+}
+
 export interface SalesKPIData {
   year: number;
   period_from: string | null;
@@ -727,8 +797,91 @@ export interface SalesKPIData {
   };
 }
 
+function normalizeSalesProduct(product: SalesKPIRawProduct): SalesKPIProduct {
+  return {
+    material_code: product.material_code ?? "",
+    material_name: product.material_name ?? "",
+    total_revenue: toFiniteNumber(product.total_revenue ?? product.revenue, 0),
+    total_qty: toFiniteNumber(product.total_qty, 0),
+    transaction_count: toFiniteNumber(product.transaction_count, 0),
+    revenue_share: toFiniteNumber(product.revenue_share, 0),
+    margin_pct:
+      product.margin_pct === undefined
+        ? undefined
+        : toFiniteNumber(product.margin_pct, 0),
+    rotation_rate:
+      product.rotation_rate === undefined
+        ? undefined
+        : toFiniteNumber(product.rotation_rate, 0),
+    coverage_days:
+      product.coverage_days === null || product.coverage_days === undefined
+        ? undefined
+        : toFiniteNumber(product.coverage_days, 0),
+  };
+}
+
+function normalizeSalesKPIData(raw: SalesKPIRawData): SalesKPIData {
+  return {
+    year: toFiniteNumber(raw.year, new Date().getFullYear()),
+    period_from: raw.period_from ?? raw.period?.from ?? null,
+    period_to: raw.period_to ?? raw.period?.to ?? null,
+    ca: {
+      total: toFiniteNumber(raw.ca?.total, 0),
+      previous: toFiniteNumber(raw.ca?.previous, 0),
+      label: raw.ca?.label ?? "Chiffre d'Affaires",
+      unit: raw.ca?.unit ?? "LYD",
+    },
+    sales_evolution: {
+      value: toFiniteNumber(raw.sales_evolution?.value, 0),
+      is_up: Boolean(raw.sales_evolution?.is_up),
+      label: raw.sales_evolution?.label ?? "Sales Evolution",
+      unit: raw.sales_evolution?.unit ?? "%",
+      description:
+        raw.sales_evolution?.description ?? "Comparison with previous period",
+    },
+    top_products: (raw.top_products ?? []).map(normalizeSalesProduct),
+    monthly_sales: (raw.monthly_sales ?? []).map((item) => ({
+      year: toFiniteNumber(item.year, 0),
+      month: toFiniteNumber(item.month, 0),
+      month_label: item.month_label ?? "",
+      total_revenue: toFiniteNumber(item.total_revenue, 0),
+      total_qty: toFiniteNumber(item.total_qty, 0),
+      count: toFiniteNumber(item.count, 0),
+    })),
+    product_margins: (raw.product_margins ?? []).map(normalizeSalesProduct),
+    top_clients: (raw.top_clients ?? []).map((client) => ({
+      customer_name: client.customer_name ?? "",
+      total_revenue: toFiniteNumber(client.total_revenue, 0),
+      transaction_count: toFiniteNumber(client.transaction_count, 0),
+      revenue_share: toFiniteNumber(client.revenue_share, 0),
+    })),
+    sales_velocity: {
+      avg_daily_revenue: toFiniteNumber(
+        raw.sales_velocity?.avg_daily_revenue,
+        0,
+      ),
+      avg_daily_qty: toFiniteNumber(raw.sales_velocity?.avg_daily_qty, 0),
+      n_days: toFiniteNumber(
+        raw.sales_velocity?.n_days ?? raw.sales_velocity?.total_days,
+        0,
+      ),
+      by_product: (raw.sales_velocity?.by_product ?? []).map((product) => ({
+        material_code: product.material_code ?? "",
+        material_name: product.material_name ?? "",
+        avg_daily_revenue: toFiniteNumber(product.avg_daily_revenue, 0),
+        avg_daily_qty: toFiniteNumber(product.avg_daily_qty, 0),
+        days_to_sell_100: toFiniteNumber(
+          product.days_to_sell_100 ?? product.days_to_sell_100_units,
+          0,
+        ),
+        total_qty: toFiniteNumber(product.total_qty, 0),
+      })),
+    },
+  };
+}
+
 export const salesKpiApi = {
-  getAll: (params?: {
+  getAll: async (params?: {
     year?: number;
     date_from?: string;
     date_to?: string;
@@ -740,7 +893,10 @@ export const salesKpiApi = {
     if (params?.date_to) p.set("date_to", params.date_to);
     if (params?.top_n) p.set("top_n", String(params.top_n));
     const qs = p.toString();
-    return api.get<SalesKPIData>(`/kpi/sales/${qs ? `?${qs}` : ""}`);
+    const raw = await api.get<SalesKPIRawData>(
+      `/kpi/sales/${qs ? `?${qs}` : ""}`,
+    );
+    return normalizeSalesKPIData(raw);
   },
 };
 
@@ -761,6 +917,39 @@ export interface StockKPIProduct {
   coverage_days: number | null;
 }
 
+interface StockKPIRawProduct {
+  material_code?: string;
+  product_name?: string;
+  category?: string | null;
+  stock_qty?: number | string;
+  stock_value?: number | string;
+  cost_price?: number | string;
+  qty_sold?: number | string;
+  revenue?: number | string;
+  rotation_rate?: number | string;
+  coverage_days?: number | string | null;
+}
+
+interface StockKPIRawData {
+  snapshot_date?: string | null;
+  year?: number;
+  stock_summary?: {
+    total_products?: number;
+    total_qty?: number;
+    total_stock_qty?: number;
+    total_value?: number;
+    total_stock_value?: number;
+    zero_stock_count?: number;
+    low_rotation_count?: number;
+    low_rotation_threshold?: number;
+    avg_rotation_rate?: number;
+  };
+  top_rotation_products?: StockKPIRawProduct[];
+  low_rotation_products?: StockKPIRawProduct[];
+  zero_stock_products?: StockKPIRawProduct[];
+  coverage_at_risk?: StockKPIRawProduct[];
+}
+
 export interface StockKPIData {
   snapshot_date: string | null;
   year: number;
@@ -771,6 +960,7 @@ export interface StockKPIData {
     zero_stock_count: number;
     low_rotation_count: number;
     low_rotation_threshold: number;
+    avg_rotation_rate?: number;
   };
   top_rotation_products: StockKPIProduct[];
   low_rotation_products: StockKPIProduct[];
@@ -778,8 +968,75 @@ export interface StockKPIData {
   coverage_at_risk: StockKPIProduct[];
 }
 
+function toFiniteNumber(value: unknown, fallback = 0): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function normalizeStockKPIProduct(
+  product: StockKPIRawProduct,
+): StockKPIProduct {
+  const coverageDaysRaw = product.coverage_days;
+  const coverageDays =
+    coverageDaysRaw === null || coverageDaysRaw === undefined
+      ? null
+      : toFiniteNumber(coverageDaysRaw, 0);
+
+  return {
+    material_code: product.material_code ?? "",
+    product_name: product.product_name ?? "",
+    category: product.category ?? null,
+    stock_qty: toFiniteNumber(product.stock_qty, 0),
+    stock_value: toFiniteNumber(product.stock_value, 0),
+    cost_price: toFiniteNumber(product.cost_price, 0),
+    qty_sold: toFiniteNumber(product.qty_sold, 0),
+    revenue: toFiniteNumber(product.revenue, 0),
+    rotation_rate: toFiniteNumber(product.rotation_rate, 0),
+    coverage_days: coverageDays,
+  };
+}
+
+function normalizeStockKPIData(raw: StockKPIRawData): StockKPIData {
+  const summary = raw.stock_summary ?? {};
+
+  return {
+    snapshot_date: raw.snapshot_date ?? null,
+    year: raw.year ?? new Date().getFullYear(),
+    stock_summary: {
+      total_products: toFiniteNumber(summary.total_products, 0),
+      total_qty: toFiniteNumber(
+        summary.total_qty ?? summary.total_stock_qty,
+        0,
+      ),
+      total_value: toFiniteNumber(
+        summary.total_value ?? summary.total_stock_value,
+        0,
+      ),
+      zero_stock_count: toFiniteNumber(summary.zero_stock_count, 0),
+      low_rotation_count: toFiniteNumber(summary.low_rotation_count, 0),
+      low_rotation_threshold: toFiniteNumber(summary.low_rotation_threshold, 0),
+      avg_rotation_rate:
+        summary.avg_rotation_rate !== undefined
+          ? toFiniteNumber(summary.avg_rotation_rate, 0)
+          : undefined,
+    },
+    top_rotation_products: (raw.top_rotation_products ?? []).map(
+      normalizeStockKPIProduct,
+    ),
+    low_rotation_products: (raw.low_rotation_products ?? []).map(
+      normalizeStockKPIProduct,
+    ),
+    zero_stock_products: (raw.zero_stock_products ?? []).map(
+      normalizeStockKPIProduct,
+    ),
+    coverage_at_risk: (raw.coverage_at_risk ?? []).map(
+      normalizeStockKPIProduct,
+    ),
+  };
+}
+
 export const stockKpiApi = {
-  getAll: (params?: {
+  getAll: async (params?: {
     snapshot_date?: string;
     year?: number;
     low_rotation_threshold?: number;
@@ -790,6 +1047,9 @@ export const stockKpiApi = {
     if (params?.low_rotation_threshold !== undefined)
       p.set("low_rotation_threshold", String(params.low_rotation_threshold));
     const qs = p.toString();
-    return api.get<StockKPIData>(`/kpi/stock/${qs ? `?${qs}` : ""}`);
+    const raw = await api.get<StockKPIRawData>(
+      `/kpi/stock/${qs ? `?${qs}` : ""}`,
+    );
+    return normalizeStockKPIData(raw);
   },
 };

@@ -1,24 +1,24 @@
 // src/app/components/SalesKPISection.tsx
 import { useState } from 'react';
 import {
-    TrendingUp, TrendingDown, ShoppingBag, Users, Clock,
-    BarChart2, ArrowUp, ArrowDown, Loader2, AlertCircle, RefreshCw,
+  TrendingUp, TrendingDown, ShoppingBag, Users, Clock,
+  BarChart2, ArrowUp, ArrowDown, Loader2, AlertCircle, RefreshCw,
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Progress } from './ui/progress';
 import {
-    BarChart,
-    Bar,
-    AreaChart,
-    Area,
-    XAxis,
-    YAxis,
-    CartesianGrid,
-    Tooltip as RechartsTooltip,
-    ResponsiveContainer,
-    Cell,
+  BarChart,
+  Bar,
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip as RechartsTooltip,
+  ResponsiveContainer,
+  Cell,
 } from 'recharts';
 import { useSalesKPI } from '../lib/dataHooks';
 import { formatCurrency, formatNumber } from '../lib/utils';
@@ -74,6 +74,7 @@ export function SalesKPISection() {
   const caTotal = Number(data?.ca?.total ?? 0);
   const caPrevious = Number(data?.ca?.previous ?? 0);
   const salesEvolutionValue = Number(data?.sales_evolution?.value ?? 0);
+  const hasSalesEvolution = data?.sales_evolution?.is_up !== null && data?.sales_evolution?.is_up !== undefined;
   const salesEvolutionIsUp = Boolean(data?.sales_evolution?.is_up);
   const salesEvolutionDescription = data?.sales_evolution?.description ?? 'No comparison data';
 
@@ -154,10 +155,10 @@ export function SalesKPISection() {
             />
             <KpiStatCard
               label="Sales Evolution"
-              value={`${salesEvolutionIsUp ? '+' : ''}${salesEvolutionValue.toFixed(1)}%`}
+              value={hasSalesEvolution ? `${salesEvolutionIsUp ? '+' : ''}${salesEvolutionValue.toFixed(1)}%` : 'N/A'}
               sub={salesEvolutionDescription}
-              icon={salesEvolutionIsUp ? TrendingUp : TrendingDown}
-              iconBg={salesEvolutionIsUp ? 'bg-green-600' : 'bg-red-500'}
+              icon={!hasSalesEvolution ? Clock : salesEvolutionIsUp ? TrendingUp : TrendingDown}
+              iconBg={!hasSalesEvolution ? 'bg-slate-500' : salesEvolutionIsUp ? 'bg-green-600' : 'bg-red-500'}
             />
             <KpiStatCard
               label="Top Products"

@@ -102,11 +102,11 @@ export function TransactionsPage() {
   const [loading, setLoading]               = useState(true);
   const [error, setError]                   = useState<string | null>(null);
   const [availableTypes, setAvailableTypes] = useState<string[]>([]);
+  const [availableBranches, setAvailableBranches] = useState<string[]>([]);
 
   // Filters
   const [selectedPeriod, setSelectedPeriod]   = useState('12m');
   const [selectedBranch, setSelectedBranch]   = useState('all');
-  const [selectedProduct, setSelectedProduct] = useState('all');
   const [selectedType, setSelectedType]       = useState('all');
 
   const [page, setPage]           = useState(1);
@@ -128,6 +128,17 @@ export function TransactionsPage() {
       .catch(() => setAvailableTypes(Object.values(MOVEMENT_TYPES)));
   }, []);
 
+  // ── Fetch branches une seule fois ─────────────────────────────────────
+  useEffect(() => {
+    const token = localStorage.getItem('fasi_access_token');
+    axios
+      .get<{ branches: string[] }>('/api/transactions/branches/', {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      })
+      .then(res => setAvailableBranches(res.data.branches))
+      .catch(() => setAvailableBranches([]));
+  }, []);
+
   // ── Fetch transactions ────────────────────────────────────────────────
   useEffect(() => {
     const fetchTransactions = async () => {
@@ -137,7 +148,8 @@ export function TransactionsPage() {
         const token = localStorage.getItem('fasi_access_token');
         const params: Record<string, any> = { page, page_size: pageSize };
         if (selectedType !== 'all') params.movement_type = selectedType;
-        // TODO: brancher branch, product, period quand le backend les supporte
+        if (selectedBranch !== 'all') params.branch = selectedBranch;
+        // TODO: brancher product, period quand le backend les supporte
 
         const { data } = await axios.get<PaginatedMovements>('/api/transactions/', {
           params,
@@ -165,7 +177,7 @@ export function TransactionsPage() {
     };
 
     fetchTransactions();
-  }, [page, selectedPeriod, selectedBranch, selectedProduct, selectedType]);
+  }, [page, selectedPeriod, selectedBranch, selectedType]);
 
   const totalPages = Math.ceil(totalCount / pageSize);
   const netFlow    = totalIn - totalOut;
@@ -358,16 +370,11 @@ export function TransactionsPage() {
                 <SelectTrigger><SelectValue placeholder="All Branches" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Branches</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
-              <label className="text-sm font-medium mb-2 block">Product</label>
-              <Select value={selectedProduct} onValueChange={v => { setSelectedProduct(v); setPage(1); }}>
-                <SelectTrigger><SelectValue placeholder="All Products" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Products</SelectItem>
+                  {availableBranches.map(branch => (
+                    <SelectItem key={branch} value={branch}>
+                      {branch}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>

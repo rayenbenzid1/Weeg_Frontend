@@ -132,7 +132,13 @@ export function StockKPISection() {
             <StatCard
               label="Low Rotation Products"
               value={String(summary?.low_rotation_count ?? 0)}
-              sub={`Threshold: ${summary?.low_rotation_threshold} rotations/yr`}
+              sub={
+                summary?.low_rotation_threshold && summary.low_rotation_threshold > 0
+                  ? `Threshold: ${summary.low_rotation_threshold} rotations/yr`
+                  : summary?.avg_rotation_rate !== undefined
+                    ? `Avg rotation: ${summary.avg_rotation_rate.toFixed(4)}x/yr`
+                    : undefined
+              }
               icon={TrendingDown}
               iconBg="bg-amber-100 dark:bg-amber-900/40"
               iconColor="text-amber-600"

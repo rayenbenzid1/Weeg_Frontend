@@ -92,8 +92,13 @@ export function KPIEnginePage() {
     count: t.count,
   }));
 
+  const purchaseBreakdown = (typeBreakdownRes?.breakdown ?? []).find(
+    t => t.movement_type === MOVEMENT_TYPES.PURCHASE,
+  );
+
   const totalSales = kpis?.totalSalesValue ?? 0;
-  const totalPurchases = kpis?.totalPurchasesValue ?? 0;
+  const totalPurchases = purchaseBreakdown?.total_in ?? kpis?.totalPurchasesValue ?? 0;
+  const totalPurchasesCount = purchaseBreakdown?.count ?? 0;
   const stockValue = kpis?.stockValue ?? 0;
   const totalReceivables = kpis?.totalReceivables ?? 0;
   const grossMargin = totalSales > 0 ? ((totalSales - totalPurchases) / totalSales) * 100 : 0;
@@ -140,8 +145,9 @@ export function KPIEnginePage() {
                 icon={TrendingUp} tooltip="Total revenue from all sales movements"
                 formula="SUM(movements.total_out WHERE type='sale')" />
               <TooltipKPICard title="Total Purchases" value={formatCurrency(totalPurchases)}
-                icon={DollarSign} tooltip="Total cost from all purchase movements"
-                formula="SUM(movements.total_in WHERE type='purchase')" />
+                icon={DollarSign}
+                tooltip={`From type-breakdown for "${MOVEMENT_TYPES.PURCHASE}" · ${formatNumber(totalPurchasesCount)} operations`}
+                formula="SUM(total_in WHERE movement_type='ف شراء')" />
               <TooltipKPICard title="Stock Value" value={formatCurrency(stockValue)}
                 icon={Package} tooltip="Current total inventory value"
                 formula="SUM(inventory.total_value)" />
