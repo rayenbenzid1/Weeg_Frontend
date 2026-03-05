@@ -26,6 +26,8 @@ import {
   type CategoryBreakdown,
   type KPIData,
   type QueryParams,
+  type BranchMonthlyResponse,
+
 } from "./dataApi";
 
 // ─────────────────────────────────────────────
@@ -153,7 +155,11 @@ export function useTransactions(
   return useAsync(() => transactionsApi.list(params), [JSON.stringify(params)]);
 }
 
-export function useTransactionSummary(params?: { year?: number }) {
+export function useTransactionSummary(params?: {
+  year?: number;
+  date_from?: string;
+  date_to?: string;
+}) {
   return useAsync(
     () => transactionsApi.summary(params),
     [JSON.stringify(params)],
@@ -179,7 +185,17 @@ export function useBranchBreakdown(params?: {
     [JSON.stringify(params)],
   );
 }
-
+export function useBranchMonthly(params?: {
+  movement_type?: string;
+  year?: number;
+  date_from?: string;   // ← ADD
+  date_to?: string;     // ← ADD
+}) {
+  return useAsync(
+    () => transactionsApi.branchMonthly(params),
+    [JSON.stringify(params)],
+  );
+}
 export function useTypeBreakdown(params?: {
   date_from?: string;
   date_to?: string;

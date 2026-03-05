@@ -8,8 +8,6 @@ import {
   BarChart3, TrendingUp, ArrowUpRight, ArrowDownRight,
   DollarSign, Wallet, Receipt, AlertTriangle, UserCheck,
 } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card';
-import { Button } from './ui/button';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Cell,
@@ -68,8 +66,8 @@ interface CreditKPIData {
   top5_risky_customers: RiskyCustomer[];
   bucket_distribution:  BucketItem[];
   summary: {
-    total_customers:         number;  // 377 — ALL rows in imported Excel
-    credit_customers:        number;  // 174 — rows with balance > 0
+    total_customers:         number;
+    credit_customers:        number;
     grand_total_receivables: number;
     overdue_amount:          number;
     ca_credit:               number;
@@ -115,13 +113,47 @@ function normalizeBucketLabel(raw: string): string {
     .trim();
 }
 
-// ── Constants ─────────────────────────────────────────────────────────────────
+// ── Brand palette ─────────────────────────────────────────────────────────────
+const C = {
+  indigo:  '#6366f1',
+  violet:  '#8b5cf6',
+  cyan:    '#0ea5e9',
+  teal:    '#14b8a6',
+  emerald: '#10b981',
+  amber:   '#f59e0b',
+  orange:  '#f97316',
+  rose:    '#f43f5e',
+};
 
-const RISK_CONFIG: Record<string, { label: string; bg: string; dot: string }> = {
-  low:      { label: 'Low',      bg: 'bg-green-100  text-green-800  dark:bg-green-900/40  dark:text-green-300',  dot: 'bg-green-500'  },
-  medium:   { label: 'Medium',   bg: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300', dot: 'bg-yellow-500' },
-  high:     { label: 'High',     bg: 'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300', dot: 'bg-orange-500' },
-  critical: { label: 'Critical', bg: 'bg-red-100    text-red-800    dark:bg-red-900/40    dark:text-red-300',    dot: 'bg-red-500'    },
+// ── CSS variable helpers ──────────────────────────────────────────────────────
+const css = {
+  card:      'hsl(var(--card))',
+  cardFg:    'hsl(var(--card-foreground))',
+  border:    'hsl(var(--border))',
+  muted:     'hsl(var(--muted))',
+  mutedFg:   'hsl(var(--muted-foreground))',
+  bg:        'hsl(var(--background))',
+  fg:        'hsl(var(--foreground))',
+  popover:   'hsl(var(--popover))',
+  popoverFg: 'hsl(var(--popover-foreground))',
+};
+
+const cardStyle: React.CSSProperties = {
+  background:   css.card,
+  borderRadius: 16,
+  padding:      24,
+  boxShadow:    '0 1px 3px rgba(0,0,0,0.08), 0 4px 20px rgba(0,0,0,0.05)',
+  border:       `1px solid ${css.border}`,
+};
+
+const axisStyle = { fontSize: 11, fill: 'hsl(var(--muted-foreground))' };
+
+// ── Constants (unchanged logic) ───────────────────────────────────────────────
+const RISK_CONFIG: Record<string, { label: string; accent: string }> = {
+  low:      { label: 'Low',      accent: C.emerald },
+  medium:   { label: 'Medium',   accent: C.amber   },
+  high:     { label: 'High',     accent: C.orange  },
+  critical: { label: 'Critical', accent: C.rose    },
 };
 
 const BUCKET_COLORS = [
@@ -130,123 +162,172 @@ const BUCKET_COLORS = [
   '#991b1b','#7f1d1d','#6b21a8','#581c87','#3b0764',
 ];
 
-// ── Summary ribbon card ───────────────────────────────────────────────────────
+// ── Custom Tooltip ────────────────────────────────────────────────────────────
+function CustomTooltip({ active, payload, label }: any) {
+  if (!active || !payload?.length) return null;
+  const pct = payload[0]?.payload?.percentage;
+  return (
+    <div style={{
+      background: css.popover, border: `1px solid ${css.border}`,
+      borderRadius: 10, padding: '10px 14px',
+      boxShadow: '0 8px 24px rgba(0,0,0,0.15)', fontSize: 12,
+    }}>
+      <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: css.mutedFg, marginBottom: 6 }}>
+        {label}
+      </p>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <span style={{ width: 8, height: 8, borderRadius: '50%', background: payload[0].fill, display: 'inline-block' }} />
+        <span style={{ color: css.mutedFg }}>Amount</span>
+        <span style={{ marginLeft: 'auto', paddingLeft: 16, fontWeight: 700, color: css.popoverFg }}>
+          {formatCurrency(payload[0].value)}{pct != null ? ` (${pct.toFixed(1)}%)` : ''}
+        </span>
+      </div>
+    </div>
+  );
+}
 
+// ── Summary ribbon card ───────────────────────────────────────────────────────
 function SummaryCard({
-  label, value, sub, icon: Icon, iconColor, iconBg,
+  label, value, sub, icon: Icon, accent,
 }: {
   label: string; value: string; sub?: string;
-  icon: LucideIcon; iconColor: string; iconBg: string;
+  icon: LucideIcon; accent: string;
 }) {
   return (
-    <Card className="p-4">
-      <div className="flex items-center gap-3">
-        <div className={`flex-shrink-0 flex items-center justify-center w-9 h-9 rounded-lg ${iconBg}`}>
-          <Icon className={`w-4 h-4 ${iconColor}`} />
-        </div>
-        <div className="min-w-0">
-          <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold leading-tight">
-            {label}
-          </p>
-          <p className="text-sm font-bold truncate mt-0.5">{value}</p>
-          {sub && (
-            <p className="text-[10px] text-muted-foreground truncate mt-0.5">{sub}</p>
-          )}
-        </div>
+    <div style={{ ...cardStyle, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+      <div style={{
+        width: 36, height: 36, borderRadius: 10, flexShrink: 0,
+        background: `${accent}18`,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}>
+        <Icon size={15} style={{ color: accent }} />
       </div>
-    </Card>
+      <div style={{ minWidth: 0 }}>
+        <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: css.mutedFg, margin: 0 }}>
+          {label}
+        </p>
+        <p style={{ fontSize: 13, fontWeight: 800, color: css.cardFg, margin: '2px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {value}
+        </p>
+        {sub && <p style={{ fontSize: 10, color: css.mutedFg, margin: 0 }}>{sub}</p>}
+      </div>
+    </div>
   );
 }
 
 // ── KPI Metric Card ───────────────────────────────────────────────────────────
-
 function KPIMetricCard({
-  kpi, kpiKey, icon: Icon, accentColor, accentBg, isGood, subline,
+  kpi, kpiKey, icon: Icon, accent, isGood, subline,
 }: {
   kpi: CreditKPIItem;
   kpiKey: string;
   icon: LucideIcon;
-  accentColor: string;
-  accentBg: string;
+  accent: string;
   isGood?: (v: number) => boolean;
   subline?: React.ReactNode;
 }) {
-  const en         = KPI_EN[kpiKey] ?? { label: kpi.label, description: kpi.description, unit: kpi.unit };
-  const good       = isGood ? isGood(kpi.value) : true;
-  const TrendIcon  = good ? ArrowUpRight : ArrowDownRight;
-  const trendCls   = good ? 'text-green-600 bg-green-50 dark:bg-green-950/40' : 'text-red-500 bg-red-50 dark:bg-red-950/40';
-  const displayVal = en.unit === 'days' ? kpi.value.toFixed(0) : kpi.value.toFixed(1);
+  const en          = KPI_EN[kpiKey] ?? { label: kpi.label, description: kpi.description, unit: kpi.unit };
+  const good        = isGood ? isGood(kpi.value) : true;
+  const TrendIcon   = good ? ArrowUpRight : ArrowDownRight;
+  const trendAccent = good ? C.emerald : C.rose;
+  const displayVal  = en.unit === 'days' ? kpi.value.toFixed(0) : kpi.value.toFixed(1);
 
   return (
-    <Card className="hover:shadow-md transition-shadow duration-200">
-      <CardContent className="p-5">
-        <div className="flex items-start justify-between mb-4">
-          <div className="flex items-center gap-2.5">
-            <div className={`flex items-center justify-center w-9 h-9 rounded-lg ${accentBg}`}>
-              <Icon className={`w-4 h-4 ${accentColor}`} />
-            </div>
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider leading-tight max-w-[140px]">
-              {en.label}
-            </p>
-          </div>
-          <span className={`flex items-center gap-0.5 text-[11px] font-semibold px-1.5 py-0.5 rounded-md ${trendCls}`}>
-            <TrendIcon className="w-3 h-3" />
-            {good ? 'Good' : 'Alert'}
-          </span>
+    <div style={{ ...cardStyle, position: 'relative', overflow: 'hidden' }}>
+      {/* soft glow */}
+      <div style={{
+        position: 'absolute', top: -24, right: -24, width: 80, height: 80,
+        borderRadius: '50%', background: accent, opacity: 0.08,
+        filter: 'blur(20px)', pointerEvents: 'none',
+      }} />
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+        <div style={{
+          width: 40, height: 40, borderRadius: 12,
+          background: `${accent}18`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <Icon size={17} style={{ color: accent }} />
         </div>
+        <span style={{
+          display: 'inline-flex', alignItems: 'center', gap: 3,
+          fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 20,
+          background: `${trendAccent}18`, color: trendAccent,
+          border: `1px solid ${trendAccent}35`,
+        }}>
+          <TrendIcon size={11} />
+          {good ? 'Good' : 'Alert'}
+        </span>
+      </div>
 
-        <div className="flex items-baseline gap-1.5 mb-2">
-          <span className="text-3xl font-extrabold tabular-nums tracking-tight">{displayVal}</span>
-          <span className={`text-base font-semibold ${accentColor}`}>{en.unit}</span>
+      <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: css.mutedFg }}>
+        {en.label}
+      </p>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, margin: '4px 0 6px' }}>
+        <span style={{ fontSize: 28, fontWeight: 800, color: css.cardFg, letterSpacing: '-0.03em' }}>{displayVal}</span>
+        <span style={{ fontSize: 15, fontWeight: 700, color: accent }}>{en.unit}</span>
+      </div>
+      <p style={{ fontSize: 12, color: css.mutedFg, lineHeight: 1.5, marginBottom: subline ? 0 : 0 }}>
+        {en.description}
+      </p>
+
+      {subline && (
+        <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px dashed ${css.border}` }}>
+          {subline}
         </div>
-
-        <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2 mb-3">
-          {en.description}
-        </p>
-
-        {subline && (
-          <div className="pt-3 border-t border-dashed">{subline}</div>
-        )}
-      </CardContent>
-    </Card>
+      )}
+    </div>
   );
 }
 
 // ── Section Header ────────────────────────────────────────────────────────────
-
 function SectionHeader({
   loading = false, onRefresh, reportDate,
 }: {
   loading?: boolean; onRefresh: () => void; reportDate?: string | null;
 }) {
   return (
-    <div className="flex items-start justify-between flex-wrap gap-3">
+    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 28 }}>
       <div>
-        <h2 className="text-xl font-bold flex items-center gap-2">
-          <CreditCard className="h-5 w-5 text-indigo-600" />
+        <h1 style={{ fontSize: 24, fontWeight: 800, color: css.fg, letterSpacing: '-0.03em', margin: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{
+            width: 36, height: 36, borderRadius: 10, background: `${C.indigo}18`,
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <CreditCard size={18} style={{ color: C.indigo }} />
+          </span>
           Customer &amp; Credit KPIs
-        </h2>
-        <p className="text-sm text-muted-foreground mt-0.5">
+        </h1>
+        <p style={{ fontSize: 13, color: css.mutedFg, marginTop: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
           Credit risk analysis and customer payment behavior
           {reportDate && (
-            <span className="ml-2 text-xs bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 px-2 py-0.5 rounded-full">
+            <span style={{
+              fontSize: 11, fontWeight: 600, padding: '2px 10px', borderRadius: 20,
+              background: `${C.indigo}18`, color: C.indigo, border: `1px solid ${C.indigo}35`,
+            }}>
               Report: {reportDate}
             </span>
           )}
         </p>
       </div>
-      <Button variant="outline" size="sm" onClick={onRefresh} disabled={loading}>
-        {loading
-          ? <Loader2 className="h-4 w-4 animate-spin mr-2" />
-          : <RefreshCw className="h-4 w-4 mr-2" />}
+      <button
+        onClick={onRefresh}
+        disabled={loading}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 6,
+          padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+          background: 'transparent', border: `1px solid ${css.border}`,
+          color: css.mutedFg, cursor: loading ? 'not-allowed' : 'pointer',
+        }}
+      >
+        {loading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
         Refresh
-      </Button>
+      </button>
     </div>
   );
 }
 
 // ── Main Component ────────────────────────────────────────────────────────────
-
 export function CreditKPISection() {
   const [data, setData]       = useState<CreditKPIData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -269,11 +350,16 @@ export function CreditKPISection() {
 
   if (loading) {
     return (
-      <div className="space-y-6">
+      <div style={{ background: css.bg, minHeight: '100vh', padding: '32px 28px' }}>
         <SectionHeader loading onRefresh={fetchData} />
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6,1fr)', gap: 12, marginBottom: 24 }}>
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} style={{ height: 72, borderRadius: 16, background: css.muted, opacity: 0.4 }} />
+          ))}
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 16 }}>
           {Array.from({ length: 5 }).map((_, i) => (
-            <Card key={i} className="h-36 animate-pulse bg-muted/30" />
+            <div key={i} style={{ height: 160, borderRadius: 16, background: css.muted, opacity: 0.4 }} />
           ))}
         </div>
       </div>
@@ -282,17 +368,23 @@ export function CreditKPISection() {
 
   if (error || !data) {
     return (
-      <div className="space-y-6">
+      <div style={{ background: css.bg, minHeight: '100vh', padding: '32px 28px' }}>
         <SectionHeader onRefresh={fetchData} />
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-16 gap-4">
-            <AlertCircle className="h-10 w-10 text-destructive" />
-            <p className="text-sm text-destructive font-medium">{error || 'No data available'}</p>
-            <Button variant="outline" size="sm" onClick={fetchData}>
-              <RefreshCw className="h-4 w-4 mr-2" /> Retry
-            </Button>
-          </CardContent>
-        </Card>
+        <div style={{ ...cardStyle, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, padding: 48 }}>
+          <AlertCircle size={36} style={{ color: C.rose }} />
+          <p style={{ fontSize: 14, color: C.rose, fontWeight: 600 }}>{error || 'No data available'}</p>
+          <button
+            onClick={fetchData}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              padding: '8px 18px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+              background: 'transparent', border: `1px solid ${css.border}`,
+              color: css.mutedFg, cursor: 'pointer',
+            }}
+          >
+            <RefreshCw size={14} /> Retry
+          </button>
+        </div>
       </div>
     );
   }
@@ -309,103 +401,43 @@ export function CreditKPISection() {
     }))
     .filter(b => b.amount > 0);
 
-  // ── Summary ribbon ────────────────────────────────────────────────────────
-  //
-  // CARD 1 — Total Accounts : 377
-  //   = ALL rows in the imported Excel file (including balance = 0)
-  //   Dynamic: changes every time a new Excel is imported.
-  //
-  // CARD 2 — Active Clients : 174
-  //   = Rows with balance > 0 in this report
-  //   Dynamic: changes every time a new Excel is imported.
-  //
   const pctActive = summary.total_customers > 0
     ? ((summary.credit_customers / summary.total_customers) * 100).toFixed(1)
     : '0';
 
-  const summaryCards: {
-    label: string; value: string; sub?: string;
-    icon: LucideIcon; iconColor: string; iconBg: string;
-  }[] = [
-    {
-      // 377 — ALL accounts in this Excel import
-      label:     'Total Accounts',
-      value:     formatNumber(summary.total_customers),
-      sub:       'All accounts in imported file',
-      icon:      Users,
-      iconColor: 'text-indigo-600',
-      iconBg:    'bg-indigo-50 dark:bg-indigo-950/40',
-    },
-    {
-      // 174 — accounts with balance > 0
-      label:     'Active Clients',
-      value:     formatNumber(summary.credit_customers),
-      sub:       `${pctActive}% of total · balance > 0`,
-      icon:      UserCheck,
-      iconColor: 'text-emerald-600',
-      iconBg:    'bg-emerald-50 dark:bg-emerald-950/40',
-    },
-    {
-      label:     'Total Receivables',
-      value:     formatCurrency(summary.grand_total_receivables),
-      icon:      BarChart3,
-      iconColor: 'text-blue-600',
-      iconBg:    'bg-blue-50 dark:bg-blue-950/40',
-    },
-    {
-      label:     'Overdue >60d',
-      value:     formatCurrency(summary.overdue_amount),
-      icon:      AlertTriangle,
-      iconColor: 'text-amber-600',
-      iconBg:    'bg-amber-50 dark:bg-amber-950/40',
-    },
-    {
-      label:     'Credit Revenue',
-      value:     formatCurrency(summary.ca_total - summary.grand_total_receivables),
-      icon:      TrendingUp,
-      iconColor: 'text-emerald-600',
-      iconBg:    'bg-emerald-50 dark:bg-emerald-950/40',
-    },
-    {
-      label:     'Total Revenue',
-      value:     formatCurrency(summary.ca_total),
-      icon:      DollarSign,
-      iconColor: 'text-orange-600',
-      iconBg:    'bg-orange-50 dark:bg-orange-950/40',
-    },
+  const summaryCards: { label: string; value: string; sub?: string; icon: LucideIcon; accent: string }[] = [
+    { label: 'Total Accounts',    value: formatNumber(summary.total_customers),                              sub: 'All accounts in imported file',      icon: Users,         accent: C.indigo  },
+    { label: 'Active Clients',    value: formatNumber(summary.credit_customers),                             sub: `${pctActive}% of total · balance > 0`, icon: UserCheck,   accent: C.emerald },
+    { label: 'Total Receivables', value: formatCurrency(summary.grand_total_receivables),                    icon: BarChart3,      accent: C.cyan    },
+    { label: 'Overdue >60d',      value: formatCurrency(summary.overdue_amount),                             icon: AlertTriangle,  accent: C.amber   },
+    { label: 'Credit Revenue',    value: formatCurrency(summary.ca_total - summary.grand_total_receivables), icon: TrendingUp,     accent: C.emerald },
+    { label: 'Total Revenue',     value: formatCurrency(summary.ca_total),                                   icon: DollarSign,     accent: C.orange  },
   ];
 
   return (
-    <div className="space-y-6">
+    <div style={{ background: css.bg, minHeight: '100vh', padding: '32px 28px' }}>
+
       <SectionHeader onRefresh={fetchData} reportDate={data.report_date} />
 
-      {/* ── Summary ribbon ────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-        {summaryCards.map((card, i) => (
-          <SummaryCard key={i} {...card} />
-        ))}
+      {/* ── Summary ribbon ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6,1fr)', gap: 12, marginBottom: 24 }}>
+        {summaryCards.map((card, i) => <SummaryCard key={i} {...card} />)}
       </div>
 
-      {/* ── 5 KPI Cards ───────────────────────────────────────────────────── */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      {/* ── 5 KPI Cards ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 16, marginBottom: 16 }}>
 
         <KPIMetricCard
           kpi={kpis.taux_clients_credit}
           kpiKey="taux_clients_credit"
           icon={Users}
-          accentColor="text-indigo-600"
-          accentBg="bg-indigo-50 dark:bg-indigo-950/40"
+          accent={C.indigo}
           isGood={v => v >= 50}
           subline={
-            // "174 active of 377 total accounts"
-            <p className="text-xs text-muted-foreground">
-              <span className="font-bold text-emerald-600">
-                {formatNumber(summary.credit_customers)}
-              </span>
+            <p style={{ fontSize: 12, color: css.mutedFg, margin: 0 }}>
+              <span style={{ fontWeight: 700, color: C.emerald }}>{formatNumber(summary.credit_customers)}</span>
               {' '}active of{' '}
-              <span className="font-semibold text-foreground">
-                {formatNumber(summary.total_customers)}
-              </span>
+              <span style={{ fontWeight: 600, color: css.cardFg }}>{formatNumber(summary.total_customers)}</span>
               {' '}total accounts
             </p>
           }
@@ -415,14 +447,13 @@ export function CreditKPISection() {
           kpi={kpis.taux_credit_total}
           kpiKey="taux_credit_total"
           icon={CreditCard}
-          accentColor="text-violet-600"
-          accentBg="bg-violet-50 dark:bg-violet-950/40"
+          accent={C.violet}
           isGood={v => v <= 85}
           subline={
-            <p className="text-xs text-muted-foreground">
-              <span className="font-bold text-violet-600">{formatCurrency (summary.ca_total - summary.grand_total_receivables)}</span>
-              {' '}<span className="text-muted-foreground/60">of</span>{' '}
-              <span className="font-semibold text-foreground">{formatCurrency(kpis.taux_credit_total.ca_total ?? 0)}</span>
+            <p style={{ fontSize: 12, color: css.mutedFg, margin: 0 }}>
+              <span style={{ fontWeight: 700, color: C.violet }}>{formatCurrency(summary.ca_total - summary.grand_total_receivables)}</span>
+              {' '}<span style={{ opacity: 0.6 }}>of</span>{' '}
+              <span style={{ fontWeight: 600, color: css.cardFg }}>{formatCurrency(kpis.taux_credit_total.ca_total ?? 0)}</span>
             </p>
           }
         />
@@ -431,14 +462,13 @@ export function CreditKPISection() {
           kpi={kpis.taux_impayes}
           kpiKey="taux_impayes"
           icon={TrendingDown}
-          accentColor="text-red-600"
-          accentBg="bg-red-50 dark:bg-red-950/40"
+          accent={C.rose}
           isGood={v => v <= 20}
           subline={
-            <p className="text-xs text-muted-foreground">
-              <span className="font-bold text-red-600">{formatCurrency(kpis.taux_impayes.overdue_amount ?? 0)}</span>
-              {' '}<span className="text-muted-foreground/60">of</span>{' '}
-              <span className="font-semibold text-foreground">{formatCurrency(kpis.taux_impayes.total_receivables ?? 0)}</span>
+            <p style={{ fontSize: 12, color: css.mutedFg, margin: 0 }}>
+              <span style={{ fontWeight: 700, color: C.rose }}>{formatCurrency(kpis.taux_impayes.overdue_amount ?? 0)}</span>
+              {' '}<span style={{ opacity: 0.6 }}>of</span>{' '}
+              <span style={{ fontWeight: 600, color: css.cardFg }}>{formatCurrency(kpis.taux_impayes.total_receivables ?? 0)}</span>
             </p>
           }
         />
@@ -447,23 +477,21 @@ export function CreditKPISection() {
           kpi={kpis.dmp}
           kpiKey="dmp"
           icon={Clock}
-          accentColor="text-amber-600"
-          accentBg="bg-amber-50 dark:bg-amber-950/40"
+          accent={C.amber}
           isGood={v => v <= 90}
           subline={
-            <div className="flex items-center gap-2">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               {[
-                { range: '< 30d',  color: 'text-green-600', match: kpis.dmp.value < 30                          },
-                { range: '30–90d', color: 'text-amber-600', match: kpis.dmp.value >= 30 && kpis.dmp.value <= 90 },
-                { range: '> 90d',  color: 'text-red-600',   match: kpis.dmp.value > 90                           },
+                { range: '< 30d',  accent: C.emerald, match: kpis.dmp.value < 30 },
+                { range: '30–90d', accent: C.amber,   match: kpis.dmp.value >= 30 && kpis.dmp.value <= 90 },
+                { range: '> 90d',  accent: C.rose,    match: kpis.dmp.value > 90 },
               ].map(s => (
-                <span
-                  key={s.range}
-                  className={`text-[10px] font-medium px-1.5 py-0.5 rounded
-                    ${s.match
-                      ? `${s.color} bg-current/10 ring-1 ring-current/30`
-                      : 'text-muted-foreground'}`}
-                >
+                <span key={s.range} style={{
+                  fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 20,
+                  background: s.match ? `${s.accent}18` : css.muted,
+                  color: s.match ? s.accent : css.mutedFg,
+                  border: `1px solid ${s.match ? s.accent + '35' : 'transparent'}`,
+                }}>
                   {s.range}
                 </span>
               ))}
@@ -475,197 +503,196 @@ export function CreditKPISection() {
           kpi={kpis.taux_recouvrement}
           kpiKey="taux_recouvrement"
           icon={BarChart3}
-          accentColor="text-emerald-600"
-          accentBg="bg-emerald-50 dark:bg-emerald-950/40"
+          accent={C.emerald}
           isGood={v => v >= 70}
           subline={
-            <p className="text-xs text-muted-foreground">
-              <span className="font-bold text-emerald-600">{formatCurrency(kpis.taux_recouvrement.recovered_amount ?? 0)}</span>
-              {' '}<span className="text-muted-foreground/60">recovered of</span>{' '}
-              <span className="font-semibold text-foreground">{formatCurrency(kpis.taux_recouvrement.total_credit ?? 0)}</span>
+            <p style={{ fontSize: 12, color: css.mutedFg, margin: 0 }}>
+              <span style={{ fontWeight: 700, color: C.emerald }}>{formatCurrency(kpis.taux_recouvrement.recovered_amount ?? 0)}</span>
+              {' '}<span style={{ opacity: 0.6 }}>recovered of</span>{' '}
+              <span style={{ fontWeight: 600, color: css.cardFg }}>{formatCurrency(kpis.taux_recouvrement.total_credit ?? 0)}</span>
             </p>
           }
         />
 
         {/* Reference thresholds card */}
-        <Card className="bg-slate-50 dark:bg-slate-800/50">
-          <CardContent className="p-5">
-            <div className="flex items-center gap-2 mb-4">
-              <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-slate-100 dark:bg-slate-700">
-                <Receipt className="w-4 h-4 text-slate-600 dark:text-slate-400" />
-              </div>
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                Reference Thresholds
-              </p>
+        <div style={{ ...cardStyle, background: `hsl(var(--muted)/0.4)` }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
+            <div style={{
+              width: 36, height: 36, borderRadius: 10, background: css.muted,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <Receipt size={15} style={{ color: css.mutedFg }} />
             </div>
-            <div className="space-y-2.5">
-              {[
-                { label: 'Total credit rate', threshold: '< 85%',  color: 'bg-violet-500'  },
-                { label: 'Overdue rate',       threshold: '< 20%',  color: 'bg-red-500'     },
-                { label: 'DSO',                threshold: '< 30d',  color: 'bg-amber-500'   },
-                { label: 'Collection rate',    threshold: '> 70%',  color: 'bg-emerald-500' },
-              ].map(t => (
-                <div key={t.label} className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className={`w-1.5 h-1.5 rounded-full ${t.color}`} />
-                    <span className="text-xs text-muted-foreground">{t.label}</span>
-                  </div>
-                  <span className="text-xs font-semibold tabular-nums">{t.threshold}</span>
-                </div>
-              ))}
-            </div>
-            <p className="text-[10px] text-muted-foreground mt-4 pt-3 border-t">
-              As of {data.report_date || 'latest'}
+            <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: css.mutedFg, margin: 0 }}>
+              Reference Thresholds
             </p>
-          </CardContent>
-        </Card>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {[
+              { label: 'Total credit rate', threshold: '< 85%',  accent: C.violet  },
+              { label: 'Overdue rate',       threshold: '< 20%',  accent: C.rose    },
+              { label: 'DSO',                threshold: '< 30d',  accent: C.amber   },
+              { label: 'Collection rate',    threshold: '> 70%',  accent: C.emerald },
+            ].map(t => (
+              <div key={t.label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: t.accent, flexShrink: 0 }} />
+                  <span style={{ fontSize: 12, color: css.mutedFg }}>{t.label}</span>
+                </div>
+                <span style={{ fontSize: 12, fontWeight: 700, color: css.cardFg }}>{t.threshold}</span>
+              </div>
+            ))}
+          </div>
+          <p style={{ fontSize: 10, color: css.mutedFg, marginTop: 16, paddingTop: 12, borderTop: `1px solid ${css.border}` }}>
+            As of {data.report_date || 'latest'}
+          </p>
+        </div>
       </div>
 
-      {/* ── Bucket Distribution Chart ────────────────────────────────────── */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <BarChart3 className="h-5 w-5 text-indigo-600" />
+      {/* ── Bucket Distribution Chart ── */}
+      <div style={{ ...cardStyle, marginBottom: 16 }}>
+        <div style={{ marginBottom: 20 }}>
+          <h3 style={{ fontSize: 14, fontWeight: 700, color: css.cardFg, margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <BarChart3 size={16} style={{ color: C.indigo }} />
             Receivables Breakdown by Age Bucket
-          </CardTitle>
-          <CardDescription>
+          </h3>
+          <p style={{ fontSize: 12, color: css.mutedFg, marginTop: 4 }}>
             Amounts distributed by aging period (LYD) ·{' '}
-            <span className="text-emerald-600 font-medium">
-              {formatNumber(summary.credit_customers)} active
-            </span>
+            <span style={{ color: C.emerald, fontWeight: 600 }}>{formatNumber(summary.credit_customers)} active</span>
             {' '}/ {formatNumber(summary.total_customers)} total accounts
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {chartData.length === 0 ? (
-            <div className="flex items-center justify-center h-48 text-sm text-muted-foreground">
-              No data available
-            </div>
-          ) : (
-            <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={chartData} margin={{ left: 10, right: 10, top: 10, bottom: 20 }}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                <XAxis dataKey="name" tick={{ fontSize: 11 }} angle={-30} textAnchor="end" height={50} />
-                <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `${(v / 1000).toFixed(0)}k`} />
-                <Tooltip
-                  content={({ active, payload, label }) => {
-                    if (!active || !payload?.length) return null;
-                    const entry = payload[0];
-                    const pct = (entry.payload as { percentage?: number })?.percentage;
-                    return (
-                      <div style={{
-                        backgroundColor: 'hsl(var(--card))',
-                        border: '1px solid hsl(var(--border))',
-                        borderRadius: '8px',
-                        padding: '8px 12px',
-                        fontSize: 12,
-                      }}>
-                        <p style={{ fontWeight: 600, marginBottom: 4 }}>{label}</p>
-                        <p>
-                          Amount: <strong>{formatCurrency(entry.value as number)}</strong>
-                          {pct != null ? ` (${pct.toFixed(1)}%)` : ''}
-                        </p>
-                      </div>
-                    );
-                  }}
-                />
-                <Bar dataKey="amount" radius={[4, 4, 0, 0]}>
-                  {chartData.map((_, i) => (
-                    <Cell key={i} fill={chartData[i].fill} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* ── Top 5 At-Risk Customers ───────────────────────────────────────── */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                <ShieldAlert className="h-5 w-5 text-red-600" />
-                Top 5 At-Risk Customers
-              </CardTitle>
-              <CardDescription>
-                Customers with the highest receivables, ranked by risk level
-              </CardDescription>
-            </div>
-            <div className="flex gap-2 flex-wrap">
-              {Object.entries(RISK_CONFIG).map(([key, cfg]) => (
-                <span key={key} className={`flex items-center gap-1 text-xs px-2.5 py-0.5 rounded-full font-medium ${cfg.bg}`}>
-                  <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
-                  {cfg.label}
-                </span>
-              ))}
-            </div>
+          </p>
+        </div>
+        {chartData.length === 0 ? (
+          <div style={{ height: 120, display: 'flex', alignItems: 'center', justifyContent: 'center', color: css.mutedFg, fontSize: 13 }}>
+            No data available
           </div>
-        </CardHeader>
-        <CardContent>
-          {top5_risky_customers.length === 0 ? (
-            <div className="flex items-center justify-center h-24 text-sm text-muted-foreground">
-              No at-risk customers found
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {top5_risky_customers.map((customer, index) => {
-                const cfg = RISK_CONFIG[customer.risk_score] ?? RISK_CONFIG.medium;
-                return (
-                  <div key={customer.id} className="p-4 rounded-xl border hover:bg-accent/30 transition-all duration-200">
-                    <div className="flex items-center gap-3 mb-3">
-                      <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full font-bold text-sm
-                        ${index === 0 ? 'bg-red-100 text-red-700 dark:bg-red-900/40'
-                          : index === 1 ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/40'
-                          : 'bg-muted text-muted-foreground'}`}>
-                        {index + 1}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-semibold text-sm truncate">
-                          {customer.customer_name || customer.account_code}
-                        </p>
-                        <p className="text-xs text-muted-foreground font-mono">#{customer.account_code}</p>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <p className="text-base font-bold text-red-600">{formatCurrency(customer.total)}</p>
-                        <span className={`inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full font-semibold ${cfg.bg}`}>
-                          <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
-                          {cfg.label}
-                        </span>
-                      </div>
-                    </div>
+        ) : (
+          <ResponsiveContainer width="100%" height={260}>
+            <BarChart data={chartData} margin={{ left: 10, right: 10, top: 10, bottom: 30 }} barCategoryGap="22%">
+              <CartesianGrid strokeDasharray="4 4" stroke={css.border} vertical={false} />
+              <XAxis dataKey="name" tick={axisStyle} axisLine={false} tickLine={false} angle={-35} textAnchor="end" interval={0} />
+              <YAxis tick={axisStyle} axisLine={false} tickLine={false} tickFormatter={v => `${(v / 1000).toFixed(0)}k`} />
+              <Tooltip content={<CustomTooltip />} />
+              <Bar dataKey="amount" radius={[5, 5, 0, 0]}>
+                {chartData.map((_, i) => <Cell key={i} fill={chartData[i].fill} />)}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        )}
+      </div>
 
-                    <div className="grid grid-cols-3 gap-2">
-                      {[
-                        { label: 'Current', value: formatCurrency(customer.current),       valueClass: 'text-green-600' },
-                        { label: 'Overdue', value: formatCurrency(customer.overdue_total),  valueClass: 'text-red-600'   },
-                        {
-                          label: 'DSO',
-                          value: `${customer.dmp_days.toFixed(0)} days`,
-                          valueClass: customer.dmp_days > 90 ? 'text-red-600'
-                            : customer.dmp_days > 30 ? 'text-amber-600'
-                            : 'text-green-600',
-                        },
-                      ].map(stat => (
-                        <div key={stat.label} className="p-2.5 rounded-lg bg-muted/40 text-center">
-                          <p className="text-[10px] text-muted-foreground mb-0.5">{stat.label}</p>
-                          <p className={`text-xs font-bold ${stat.valueClass}`}>{stat.value}</p>
-                        </div>
-                      ))}
-                    </div>
+      {/* ── Top 5 At-Risk Customers ── */}
+      <div style={cardStyle}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 20 }}>
+          <div>
+            <h3 style={{ fontSize: 14, fontWeight: 700, color: css.cardFg, margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <ShieldAlert size={16} style={{ color: C.rose }} />
+              Top 5 At-Risk Customers
+            </h3>
+            <p style={{ fontSize: 12, color: css.mutedFg, marginTop: 4 }}>
+              Customers with the highest receivables, ranked by risk level
+            </p>
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {Object.entries(RISK_CONFIG).map(([key, cfg]) => (
+              <span key={key} style={{
+                display: 'inline-flex', alignItems: 'center', gap: 5,
+                fontSize: 11, fontWeight: 600, padding: '2px 10px', borderRadius: 20,
+                background: `${cfg.accent}18`, color: cfg.accent, border: `1px solid ${cfg.accent}35`,
+              }}>
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: cfg.accent }} />
+                {cfg.label}
+              </span>
+            ))}
+          </div>
+        </div>
 
-                    <div className="flex items-center justify-between mt-2.5 pt-2.5 border-t text-[11px] text-muted-foreground">
-                      <span>Overdue: <span className="font-semibold text-red-500">{customer.overdue_percentage.toFixed(1)}%</span></span>
-                      <span>Current: <span className="font-semibold text-green-600">{(100 - customer.overdue_percentage).toFixed(1)}%</span></span>
+        {top5_risky_customers.length === 0 ? (
+          <div style={{ height: 96, display: 'flex', alignItems: 'center', justifyContent: 'center', color: css.mutedFg, fontSize: 13 }}>
+            No at-risk customers found
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {top5_risky_customers.map((customer, index) => {
+              const cfg        = RISK_CONFIG[customer.risk_score] ?? RISK_CONFIG.medium;
+              const rankAccent = index === 0 ? C.rose : index === 1 ? C.orange : css.mutedFg;
+              return (
+                <div key={customer.id} style={{ padding: 16, borderRadius: 12, border: `1px solid ${css.border}` }}>
+                  {/* top row */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+                    <div style={{
+                      width: 36, height: 36, borderRadius: 10, flexShrink: 0,
+                      background: `${rankAccent}18`, border: `1px solid ${rankAccent}35`,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: 14, fontWeight: 800, color: rankAccent,
+                    }}>
+                      {index + 1}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ fontSize: 13, fontWeight: 700, color: css.cardFg, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {customer.customer_name || customer.account_code}
+                      </p>
+                      <p style={{ fontSize: 11, color: css.mutedFg, fontFamily: 'monospace', margin: 0 }}>#{customer.account_code}</p>
+                    </div>
+                    <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                      <p style={{ fontSize: 15, fontWeight: 800, color: C.rose, margin: 0 }}>{formatCurrency(customer.total)}</p>
+                      <span style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 4,
+                        fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 20,
+                        background: `${cfg.accent}18`, color: cfg.accent, border: `1px solid ${cfg.accent}35`,
+                        textTransform: 'uppercase',
+                      }}>
+                        <span style={{ width: 5, height: 5, borderRadius: '50%', background: cfg.accent }} />
+                        {cfg.label}
+                      </span>
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+
+                  {/* stat chips — unchanged data, new style */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8, marginBottom: 10 }}>
+                    {[
+                      { label: 'Current', value: formatCurrency(customer.current),       accent: C.emerald },
+                      { label: 'Overdue', value: formatCurrency(customer.overdue_total),  accent: C.rose    },
+                      {
+                        label: 'DSO',
+                        value: `${customer.dmp_days.toFixed(0)} days`,
+                        accent: customer.dmp_days > 90 ? C.rose : customer.dmp_days > 30 ? C.amber : C.emerald,
+                      },
+                    ].map(stat => (
+                      <div key={stat.label} style={{
+                        padding: 8, borderRadius: 8, textAlign: 'center',
+                        background: `${stat.accent}08`, border: `1px solid ${stat.accent}20`,
+                      }}>
+                        <p style={{ fontSize: 10, color: css.mutedFg, margin: '0 0 2px' }}>{stat.label}</p>
+                        <p style={{ fontSize: 12, fontWeight: 800, color: stat.accent, margin: 0 }}>{stat.value}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* progress bar */}
+                  <div style={{ height: 5, borderRadius: 999, background: css.muted, overflow: 'hidden' }}>
+                    <div style={{
+                      height: '100%', borderRadius: 999,
+                      width: `${Math.min(100, customer.overdue_percentage)}%`,
+                      background: `linear-gradient(90deg, ${cfg.accent}55, ${cfg.accent})`,
+                      transition: 'width 0.5s ease',
+                    }} />
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 5 }}>
+                    <span style={{ fontSize: 10, color: css.mutedFg }}>
+                      Overdue: <span style={{ fontWeight: 700, color: C.rose }}>{customer.overdue_percentage.toFixed(1)}%</span>
+                    </span>
+                    <span style={{ fontSize: 10, color: css.mutedFg }}>
+                      Current: <span style={{ fontWeight: 700, color: C.emerald }}>{(100 - customer.overdue_percentage).toFixed(1)}%</span>
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
     </div>
   );
 }

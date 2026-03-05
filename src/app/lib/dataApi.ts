@@ -412,6 +412,17 @@ export interface BranchBreakdownItem {
   total: number;
 }
 
+export interface BranchMonthlyItem {
+  month: string;
+  year: number;
+  [branch: string]: string | number;
+}
+
+export interface BranchMonthlyResponse {
+  movement_type: string;
+  branches: string[];
+  monthly_data: BranchMonthlyItem[];
+}
 export const transactionsApi = {
   list: (
     params?: QueryParams & {
@@ -454,10 +465,26 @@ export const transactionsApi = {
    * Use this to dynamically populate filter dropdowns.
    * GET /api/transactions/movement-types/
    */
+branchMonthly: (params?: {
+  movement_type?: string;
+  year?: number;
+  date_from?: string;
+  date_to?: string;
+}) => {
+  const query = new URLSearchParams();
+  if (params?.movement_type) query.set('movement_type', params.movement_type);
+  if (params?.year)          query.set('year', String(params.year));
+  if (params?.date_from)     query.set('date_from', params.date_from);
+  if (params?.date_to)       query.set('date_to', params.date_to);
+  const qs = query.toString();
+  // ✅ Pas de slash final avant le ?
+  return api.get<BranchMonthlyResponse>(
+    `/transactions/branch-monthly${qs ? `/?${qs}` : '/'}`
+  );
+},
   movementTypes: () =>
-    api.get<{ movement_types: string[] }>("/transactions/movement-types/"),
+    api.get<{ types: string[] }>('/transactions/movement-types/'),
 };
-
 // ─────────────────────────────────────────────
 // Aging
 // ─────────────────────────────────────────────

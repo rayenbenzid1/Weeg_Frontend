@@ -34,7 +34,9 @@ export function KPICard({
         {trend && (
           <div className={`flex items-center gap-1 text-sm font-medium ${trend.isPositive ? 'text-green-600' : 'text-red-600'}`}>
             <span>{trend.isPositive ? '↑' : '↓'}</span>
-            <span>{trend.value.toFixed(1)}%</span>
+            {/* <span>{trend.value.toFixed(1)}%</span> */}
+            <span>{(trend.value ?? 0).toFixed(1)}%</span>
+
           </div>
         )}
       </div>

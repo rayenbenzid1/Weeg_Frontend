@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Upload, CheckCircle2, AlertCircle, Download } from 'lucide-react';
+import { Upload, CheckCircle2, AlertCircle, Download, Users, GitBranch, Clock, Package, ArrowLeftRight } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Progress } from '../components/ui/progress';
@@ -12,47 +12,87 @@ import {
   TableHeader,
   TableRow,
 } from '../components/ui/table';
-import { dataImportApi, ImportResult, DetectResult } from '../lib/dataApi'; // adjust path if needed
+import { Badge } from '../components/ui/badge';
+import { dataImportApi, ImportResult, DetectResult } from '../lib/dataApi';
 import axios from 'axios';
+import * as XLSX from 'xlsx';
 
+// ─── Template definitions mapped to your actual Excel files ───────────────────
+// exactHeaders = the real Arabic column headers as they appear in the source files
 const templates = [
   {
-    id: 'sales',
-    title: 'Sales Template',
-    description: 'Import sales transactions and invoices',
-    icon: '📄',
-    role: ['agent', 'manager'],
-  },
-  {
-    id: 'purchases',
-    title: 'Purchases Template',
-    description: 'Import purchase orders and supplier invoices',
-    icon: '📄',
-    role: ['manager'],
-  },
-  {
-    id: 'stock',
-    title: 'Stock Movements Template',
-    description: 'Import inventory movements and transfers',
-    icon: '📄',
-    role: ['agent', 'manager'],
-  },
-  {
     id: 'customers',
-    title: 'Customer Balances Template',
-    description: 'Import customer account balances',
-    icon: '📄',
-    role: ['manager'],
+    title: 'العملاء',
+    titleEn: 'Customers',
+    description: 'Import customer data and their detailed information',
+    fileName: 'العملاء.xlsx',
+    icon: Users,
+    color: 'text-blue-600',
+    bg: 'bg-blue-50 dark:bg-blue-950/30',
+    border: 'border-blue-200 dark:border-blue-800',
+    columns: ['Customer Name', 'Account Code', 'Detailed Address', 'Region Code', 'Phone Number', 'Email'],
+    exactHeaders: ['اسم العميل', 'رمز الحساب', 'العنوان التفصيلي', 'رمز المنطقة', 'رقم الهاتف1', 'بريد الكتروني'],
+    role: ['agent', 'manager'],
   },
   {
-    id: 'exchange',
-    title: 'Exchange Rates Template',
-    description: 'Import currency exchange rates',
-    icon: '📄',
-    role: ['manager'],
+    id: 'branches',
+    title: 'الفروع',
+    titleEn: 'Branches',
+    description: 'Import branch data and their locations',
+    fileName: 'فروع.xlsx',
+    icon: GitBranch,
+    color: 'text-emerald-600',
+    bg: 'bg-emerald-50 dark:bg-emerald-950/30',
+    border: 'border-emerald-200 dark:border-emerald-800',
+    columns: ['Branch', 'Address / Location', 'Phone Number'],
+    exactHeaders: ['الفرع', 'العنوان / الموقع', 'رقم الهاتف'],
+    role: ['agent', 'manager'],
+  },
+  {
+    id: 'aging',
+    title: 'أعمار الذمم',
+    titleEn: 'Aging of Receivables',
+    description: 'Import aging receivables report with time-based distribution',
+    fileName: 'أعمار_الذمم.xlsx',
+    icon: Clock,
+    color: 'text-amber-600',
+    bg: 'bg-amber-50 dark:bg-amber-950/30',
+    border: 'border-amber-200 dark:border-amber-800',
+    columns: ['#', 'Account', 'Current', '1-30 Days', '31-60 Days', '61-90 Days', '91-120 Days', '…', 'Over 330 Days', 'Total'],
+    exactHeaders: ['#', 'الحساب', 'الحالي', '1-30 يوم', '31-60 يوم', '61-90 يوم', '91-120 يوم', '121-150 يوم', '151-180 يوم', '181-210 يوم', '211-240 يوم', '241-270 يوم', '271-300 يوم', '301-330 يوم', 'أكثر من 330 يوم', 'المجموع'],
+    role: ['agent', 'manager'],
+  },
+  {
+    id: 'inventory',
+    title: 'الجرد الأفقي',
+    titleEn: 'Year-End Inventory',
+    description: 'Import year-end inventory with quantities and values per branch',
+    fileName: 'جرد_افقي_نهاية_السنة.xlsx',
+    icon: Package,
+    color: 'text-violet-600',
+    bg: 'bg-violet-50 dark:bg-violet-950/30',
+    border: 'border-violet-200 dark:border-violet-800',
+    columns: ['Index', 'Item Code', 'Item Name', 'Quantities (per branch)', 'Values (per branch)', 'Total Quantity', 'Price', 'Total Value'],
+    exactHeaders: ['الفهرس', 'رمز المادة', 'اسم المادة', 'فرع الكريمية', 'مخزن بنغازي', 'مخزن المزرعة', 'قيمة   مخزن   المزرعة  ', 'مخزن صالة عرض الدهماني', 'قيمة   فرع  الدهماني  ', 'مخزن صالة عرض جنزور', 'قيمة   فرع  جنزور ', 'مخزن صالة عرض مصراتة', 'قيمة   جرد   فرع  الكريمية  ', 'قيمة   فرع   مصراتة ', 'إجمالي كمية (الوحدة الافتراضية)', 'السعر (كلفة الشركة)', 'إجمالي قيمة'],
+    role: ['agent', 'manager'],
+  },
+  {
+    id: 'movements',
+    title: 'حركة المادة',
+    titleEn: 'Stock Movements',
+    description: 'Import item movements including inputs, outputs and balances',
+    fileName: 'حركة_المادة.xlsx',
+    icon: ArrowLeftRight,
+    color: 'text-rose-600',
+    bg: 'bg-rose-50 dark:bg-rose-950/30',
+    border: 'border-rose-200 dark:border-rose-800',
+    columns: ['Index', 'Item Code', 'Item Name', 'Date', 'Input Qty', 'Input Price', 'Output Qty', 'Output Price', 'Balance Price', 'Branch', 'Customer'],
+    exactHeaders: ['الفهرس', 'رمز  المادة', 'رمز المعمل', 'اسم   المادة', 'تاريخ', 'حركة.1', 'كمية  الادخلات', 'سعر  الادخلات', 'اجمالي  الادخلات', 'كمية  الاخراجات', 'سعر  الاخراجات', 'اجمالي   الاخراجات', 'سعر  الرصيد', 'الفرع', 'العميل'],
+    role: ['agent', 'manager'],
   },
 ];
 
+// ─── Component ────────────────────────────────────────────────────────────────
 export function DataImportPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -60,8 +100,38 @@ export function DataImportPage() {
   const [uploadResult, setUploadResult] = useState<ImportResult | null>(null);
   const [previewData, setPreviewData] = useState<DetectResult | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [expandedTemplate, setExpandedTemplate] = useState<string | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   const userRole = 'manager'; // Replace with real role from auth context
+
+  const handleDownloadTemplate = (e: React.MouseEvent, template: typeof templates[0]) => {
+    e.stopPropagation();
+    setDownloadingId(template.id);
+
+    try {
+      // Build worksheet with exact Arabic headers + 3 empty example rows
+      const ws = XLSX.utils.aoa_to_sheet([template.exactHeaders]);
+
+      // Style: freeze top row so headers stay visible while scrolling
+      ws['!freeze'] = { xSplit: 0, ySplit: 1 };
+
+      // Set column widths based on header length
+      ws['!cols'] = template.exactHeaders.map((h) => ({
+        wch: Math.max(h.length + 4, 14),
+      }));
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Data');
+
+      // Trigger browser download
+      XLSX.writeFile(wb, template.fileName);
+    } catch (err) {
+      console.error('Template generation failed:', err);
+    } finally {
+      setDownloadingId(null);
+    }
+  };
 
   const handleFileChange = async (file: File | null) => {
     if (!file) return;
@@ -98,10 +168,6 @@ export function DataImportPage() {
       const formData = new FormData();
       formData.append('file', selectedFile);
 
-      // Optional: force file type or add metadata
-      // formData.append('file_type', 'movements');
-      // formData.append('snapshot_date', '2025-12-31');
-
       const token = localStorage.getItem('fasi_access_token');
 
       const response = await axios.post<ImportResult>(
@@ -137,7 +203,7 @@ export function DataImportPage() {
   const hasPreview = previewData && previewData.preview_rows.length > 0;
 
   return (
-    <div className="space-y-8 p-6">
+    <div className="space-y-8 p-6" >
       {/* Page Header */}
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Data Import Center</h1>
@@ -157,7 +223,10 @@ export function DataImportPage() {
         <CardContent>
           <div
             className={`border-2 border-dashed rounded-xl p-12 text-center transition-all cursor-pointer
-              ${isUploading ? 'opacity-60 pointer-events-none border-gray-300' : 'hover:border-indigo-500 hover:bg-indigo-50/30'}`}
+              ${isUploading
+                ? 'opacity-60 pointer-events-none border-gray-300'
+                : 'hover:border-indigo-500 hover:bg-indigo-50/30 dark:hover:bg-indigo-950/20'
+              }`}
             onDragOver={(e) => e.preventDefault()}
             onDrop={(e) => {
               e.preventDefault();
@@ -281,7 +350,7 @@ export function DataImportPage() {
                   {previewData.preview_rows.map((row, rowIndex) => (
                     <TableRow key={rowIndex}>
                       {previewData.headers.map((header, colIndex) => (
-                        <TableCell key={colIndex}>
+                        <TableCell key={colIndex} className="">
                           {row[header] ?? row[`Column ${colIndex + 1}`] ?? '—'}
                         </TableCell>
                       ))}
@@ -298,33 +367,90 @@ export function DataImportPage() {
       <Card>
         <CardHeader>
           <CardTitle>Download Templates</CardTitle>
-          <CardDescription>Ready-to-use Excel import templates</CardDescription>
+          <CardDescription>
+            Ready-to-use Excel import templates — click any template to view required columns
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {templates.map((template) => {
               const canDownload = template.role.includes(userRole);
+              const IconComponent = template.icon;
+              const isExpanded = expandedTemplate === template.id;
+
               return (
                 <Card
                   key={template.id}
-                  className={`transition-all ${!canDownload ? 'opacity-55' : 'hover:shadow-md'}`}
+                  className={`transition-all overflow-hidden border ${template.border}
+                    ${!canDownload ? 'opacity-55' : 'hover:shadow-md cursor-pointer'}
+                    ${isExpanded ? 'ring-2 ring-indigo-500' : ''}
+                  `}
+                  onClick={() =>
+                    canDownload &&
+                    setExpandedTemplate(isExpanded ? null : template.id)
+                  }
                 >
-                  <CardContent className="pt-6">
+                  <CardContent className="pt-6 pb-4">
                     <div className="flex flex-col items-center text-center gap-3">
-                      <div className="text-4xl">{template.icon}</div>
-                      <h4 className="font-semibold">{template.title}</h4>
+                      {/* Icon */}
+                      <div className={`p-3 rounded-full ${template.bg}`}>
+                        <IconComponent className={`h-6 w-6 ${template.color}`} />
+                      </div>
+
+                      {/* Titles */}
+                      <div>
+                        <h4 className="font-bold text-base">{template.title}</h4>
+                        <p className="text-xs text-muted-foreground">{template.titleEn}</p>
+                      </div>
+
+                      {/* Description */}
                       <p className="text-sm text-muted-foreground min-h-[40px]">
                         {template.description}
                       </p>
+
+                      {/* File name badge */}
+                      <Badge variant="secondary" className="text-xs font-mono truncate max-w-full">
+                        {template.fileName}
+                      </Badge>
+
+                      {/* Columns (expandable) */}
+                      {isExpanded && (
+                        <div className="w-full mt-2 border-t pt-3 space-y-1">
+                          <p className="text-xs font-semibold text-muted-foreground mb-2">
+                            Required columns:
+                          </p>
+                          <div className="flex flex-wrap gap-1 justify-center">
+                            {template.columns.map((col, i) => (
+                              <Badge key={i} variant="outline" className="text-xs">
+                                {col}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Download button */}
                       <Button
                         variant="outline"
                         size="sm"
-                        className="mt-2 w-full sm:w-auto"
-                        disabled={!canDownload}
-                        // onClick={() => dataImportApi.downloadTemplate(template.id)}
+                        className={`mt-2 w-full ${template.color} border-current`}
+                        disabled={!canDownload || downloadingId === template.id}
+                        onClick={(e) => handleDownloadTemplate(e, template)}
                       >
-                        <Download className="mr-2 h-4 w-4" />
-                        Download
+                        {downloadingId === template.id ? (
+                          <>
+                            <svg className="mr-2 h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                            </svg>
+                            Downloading...
+                          </>
+                        ) : (
+                          <>
+                            <Download className="mr-2 h-4 w-4" />
+                            Download Template
+                          </>
+                        )}
                       </Button>
                     </div>
                   </CardContent>
@@ -334,10 +460,6 @@ export function DataImportPage() {
           </div>
         </CardContent>
       </Card>
-
-      {/* Optional: Data Processing Pipeline visual */}
-      {/* You can keep it or remove it – it's purely decorative */}
-      {/* ... */}
     </div>
   );
 }

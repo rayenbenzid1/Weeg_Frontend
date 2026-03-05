@@ -1,14 +1,14 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   Users, UserPlus, Shield, Trash2, Loader2,
-  Mail, Building2, RefreshCw, AlertTriangle
+  Mail, Building2, RefreshCw, AlertTriangle, Search,
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
 import { CreateUserDialog } from '../components/CreateUserDialog';
 import { ManagePermissionsDialog } from '../components/ManagePermissionsDialog';
 import { useAuth } from '../contexts/AuthContext';
 import { authApi } from '../lib/authApi';
-import { api } from '../lib/api';
 import { toast } from 'sonner';
 
 interface Agent {
@@ -23,11 +23,13 @@ interface Agent {
   permissions_list: string[];
 }
 
-// ---------------------------------------------------------------------------
+// ─────────────────────────────────────────────
 // DeleteConfirmModal
-// ---------------------------------------------------------------------------
+// ─────────────────────────────────────────────
 
-function DeleteConfirmModal({ agent, onConfirm, onCancel, isLoading }: {
+function DeleteConfirmModal({
+  agent, onConfirm, onCancel, isLoading,
+}: {
   agent: Agent;
   onConfirm: () => void;
   onCancel: () => void;
@@ -48,8 +50,8 @@ function DeleteConfirmModal({ agent, onConfirm, onCancel, isLoading }: {
         <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3">
           <p className="text-sm text-red-700 dark:text-red-400">
             ⚠️ This action is <strong>irreversible</strong>. The account of{' '}
-            <strong>{agent.full_name}</strong> ({agent.email}) will be permanently deleted.
-            All sessions will also be revoked.
+            <strong>{agent.full_name}</strong> ({agent.email}) will be permanently
+            deleted. All sessions will also be revoked.
           </p>
         </div>
         <div className="flex gap-2">
@@ -72,27 +74,29 @@ function DeleteConfirmModal({ agent, onConfirm, onCancel, isLoading }: {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Main TeamPage
-// ---------------------------------------------------------------------------
+// ─────────────────────────────────────────────
+// TeamPage
+// ─────────────────────────────────────────────
 
 export function TeamPage() {
-  const { user, createAgent, updateUserPermissions, users, refreshProfile } = useAuth();
-  const [agents, setAgents]                   = useState<Agent[]>([]);
-  const [isLoading, setIsLoading]             = useState(true);
-  const [showCreateDialog, setShowCreateDialog] = useState(false);
-  const [showPermissionsDialog, setShowPermissionsDialog] = useState(false);
-  const [deleteTarget, setDeleteTarget]       = useState<Agent | null>(null);
-  const [deleteLoading, setDeleteLoading]     = useState(false);
+  const { user, createAgent, updateUserPermissions } = useAuth();
 
-  // ── Fetch agents ──────────────────────────────────────────────────────────
+  const [agents,               setAgents]               = useState<Agent[]>([]);
+  const [isLoading,            setIsLoading]            = useState(true);
+  const [nameSearch,           setNameSearch]           = useState('');
+  const [showCreateDialog,     setShowCreateDialog]     = useState(false);
+  const [showPermissionsDialog,setShowPermissionsDialog]= useState(false);
+  const [deleteTarget,         setDeleteTarget]         = useState<Agent | null>(null);
+  const [deleteLoading,        setDeleteLoading]        = useState(false);
+
+  // ── Fetch ─────────────────────────────────────────────────────────────
   const fetchAgents = useCallback(async () => {
     setIsLoading(true);
     try {
       const res = await authApi.getAgents();
       setAgents(res.agents as Agent[]);
     } catch (err: any) {
-      toast.error(err?.userMessage ?? 'Error loading agents');
+      toast.error(err?.message ?? 'Error loading agents');
     } finally {
       setIsLoading(false);
     }
@@ -100,23 +104,25 @@ export function TeamPage() {
 
   useEffect(() => { fetchAgents(); }, [fetchAgents]);
 
-  // ── Create agent ──────────────────────────────────────────────────────────
+  // ── Handlers ──────────────────────────────────────────────────────────
   const handleCreateAgent = async (userData: {
-    name: string; email: string; role: string;
-    permissions: string[]; branchId?: string; tempPassword?: string;
+    name: string;
+    email: string;
+    role: string;
+    permissions: string[];
+    branchId?: string;
+    tempPassword?: string;
   }) => {
     await createAgent(userData);
     await fetchAgents();
     toast.success(`Agent account created for ${userData.name}`);
   };
 
-  // ── Update permissions ────────────────────────────────────────────────────
   const handleUpdatePermissions = async (userId: string, permissions: string[]) => {
     await updateUserPermissions(userId, permissions);
     await fetchAgents();
   };
 
-  // ── Delete agent ──────────────────────────────────────────────────────────
   const handleDeleteConfirm = async () => {
     if (!deleteTarget) return;
     setDeleteLoading(true);
@@ -126,36 +132,43 @@ export function TeamPage() {
       setDeleteTarget(null);
       await fetchAgents();
     } catch (err: any) {
-      toast.error(err?.userMessage ?? 'Error during deletion');
+      toast.error(err?.message ?? 'Error during deletion');
     } finally {
       setDeleteLoading(false);
     }
   };
 
-  // Map agents to User format for permissions dialog
+  // ── Derived ───────────────────────────────────────────────────────────
+  const filteredAgents = agents.filter(a =>
+    !nameSearch.trim() ||
+    a.full_name.toLowerCase().includes(nameSearch.trim().toLowerCase()) ||
+    a.email.toLowerCase().includes(nameSearch.trim().toLowerCase())
+  );
+
   const agentsAsUsers = agents.map(a => ({
-    id: a.id,
-    name: a.full_name,
-    email: a.email,
-    role: a.role as any,
+    id:          a.id,
+    name:        a.full_name,
+    email:       a.email,
+    role:        a.role as any,
     permissions: a.permissions_list ?? [],
-    isVerified: true,
-    createdAt: a.created_at,
+    isVerified:  true,
+    createdAt:   a.created_at,
   }));
 
-  const statusBadge = (status: string) => ({
-    active:    'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
-    suspended: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
-    pending:   'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
-  }[status] ?? 'bg-gray-100 text-gray-600');
+  const statusBadge = (status: string) =>
+    ({
+      active:    'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+      suspended: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+      pending:   'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+    }[status] ?? 'bg-gray-100 text-gray-600');
 
-  const statusLabel = (status: string) => ({
-    active: 'Active', suspended: 'Suspended', pending: 'Pending',
-  }[status] ?? status);
+  const statusLabel = (status: string) =>
+    ({ active: 'Active', suspended: 'Suspended', pending: 'Pending' }[status] ?? status);
 
+  // ─────────────────────────────────────────────────────────────────────
   return (
     <>
-      {/* Delete Confirm Modal */}
+      {/* Delete Modal */}
       {deleteTarget && (
         <DeleteConfirmModal
           agent={deleteTarget}
@@ -165,7 +178,7 @@ export function TeamPage() {
         />
       )}
 
-      {/* Create Agent Dialog */}
+      {/* Create Dialog */}
       <CreateUserDialog
         open={showCreateDialog}
         onClose={() => setShowCreateDialog(false)}
@@ -181,6 +194,7 @@ export function TeamPage() {
       />
 
       <div className="space-y-6">
+
         {/* Header */}
         <div className="flex items-start justify-between flex-wrap gap-3">
           <div>
@@ -191,10 +205,16 @@ export function TeamPage() {
           </div>
           <div className="flex gap-2 flex-wrap">
             <Button variant="outline" size="sm" onClick={fetchAgents} disabled={isLoading}>
-              {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              {isLoading
+                ? <Loader2 className="h-4 w-4 animate-spin" />
+                : <RefreshCw className="h-4 w-4" />}
               <span className="ml-2">Refresh</span>
             </Button>
-            <Button variant="outline" onClick={() => setShowPermissionsDialog(true)} disabled={agents.length === 0}>
+            <Button
+              variant="outline"
+              onClick={() => setShowPermissionsDialog(true)}
+              disabled={agents.length === 0}
+            >
               <Shield className="h-4 w-4 mr-2" />
               Manage permissions
             </Button>
@@ -225,6 +245,17 @@ export function TeamPage() {
           </div>
         </div>
 
+        {/* Search */}
+        <div className="relative max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+          <Input
+            placeholder="Search by name or email…"
+            value={nameSearch}
+            onChange={e => setNameSearch(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+
         {/* Agent List */}
         {isLoading ? (
           <div className="border rounded-lg p-12 text-center">
@@ -235,17 +266,28 @@ export function TeamPage() {
           <div className="border rounded-lg p-12 text-center">
             <Users className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
             <h3 className="font-semibold text-lg mb-2">No agents</h3>
-            <p className="text-muted-foreground mb-4">Create your first agent account to get started.</p>
+            <p className="text-muted-foreground mb-4">
+              Create your first agent account to get started.
+            </p>
             <Button onClick={() => setShowCreateDialog(true)}>
               <UserPlus className="h-4 w-4 mr-2" />
               Create agent
             </Button>
           </div>
+        ) : filteredAgents.length === 0 ? (
+          <div className="border rounded-lg p-12 text-center">
+            <Search className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+            <h3 className="font-semibold text-lg mb-2">No results</h3>
+            <p className="text-muted-foreground">
+              No agent matches "<strong>{nameSearch}</strong>".
+            </p>
+          </div>
         ) : (
           <div className="grid gap-3">
-            {agents.map(agent => (
+            {filteredAgents.map(agent => (
               <div key={agent.id} className="border rounded-lg p-4">
                 <div className="flex items-center justify-between gap-4">
+
                   {/* Agent info */}
                   <div className="flex items-center gap-3 min-w-0">
                     <div className="flex h-10 w-10 items-center justify-center rounded-full bg-violet-100 dark:bg-violet-900 shrink-0">
@@ -254,7 +296,9 @@ export function TeamPage() {
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <p className="font-medium">{agent.full_name}</p>
-                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${statusBadge(agent.status)}`}>
+                        <span
+                          className={`text-xs px-2 py-0.5 rounded-full font-medium ${statusBadge(agent.status)}`}
+                        >
                           {statusLabel(agent.status)}
                         </span>
                         <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400">
@@ -263,18 +307,20 @@ export function TeamPage() {
                       </div>
                       <div className="flex items-center gap-3 mt-1 flex-wrap">
                         <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                          <Mail className="h-3 w-3" />{agent.email}
+                          <Mail className="h-3 w-3" />
+                          {agent.email}
                         </span>
                         {agent.company_name && (
                           <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                            <Building2 className="h-3 w-3" />{agent.company_name}
+                            <Building2 className="h-3 w-3" />
+                            {agent.company_name}
                           </span>
                         )}
                       </div>
                     </div>
                   </div>
 
-                  {/* Actions — FIX #2: Delete button */}
+                  {/* Delete button */}
                   <div className="flex items-center gap-2 shrink-0">
                     <Button
                       size="sm"
@@ -286,11 +332,13 @@ export function TeamPage() {
                       <span className="hidden sm:inline">Delete</span>
                     </Button>
                   </div>
+
                 </div>
               </div>
             ))}
           </div>
         )}
+
       </div>
     </>
   );

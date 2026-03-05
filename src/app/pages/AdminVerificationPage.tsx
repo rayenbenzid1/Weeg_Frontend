@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { Button } from '../components/ui/button';
 import {
   Check, X, Mail, Calendar, User as UserIcon, Building2,
-  Loader2, RefreshCw, Ban, UserCheck, Filter
+  Loader2, RefreshCw, Ban, UserCheck, Filter,
+  Globe, MapPin, Server, Briefcase,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
@@ -20,6 +21,11 @@ interface ManagerUser {
   status: string;
   company: string | null;
   company_name: string | null;
+  // ✅ NEW company fields
+  company_industry?: string | null;
+  company_country?: string | null;
+  company_city?: string | null;
+  company_current_erp?: string | null;
   created_at: string;
   permissions_list: string[];
 }
@@ -62,9 +68,7 @@ function RejectModal({
         <div className="flex gap-2">
           <Button className="flex-1 bg-red-600 hover:bg-red-700 text-white"
             onClick={() => onConfirm(reason)} disabled={isLoading || !reason.trim()}>
-            {isLoading
-              ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Rejecting...</>
-              : <><X className="h-4 w-4 mr-2" />Confirm</>}
+            {isLoading ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Rejecting...</> : <><X className="h-4 w-4 mr-2" />Confirm</>}
           </Button>
           <Button variant="outline" onClick={onCancel} disabled={isLoading}>Cancel</Button>
         </div>
@@ -111,9 +115,7 @@ function SuspendModal({
         <div className="flex gap-2">
           <Button className="flex-1 bg-orange-600 hover:bg-orange-700 text-white"
             onClick={() => onConfirm(reason)} disabled={isLoading}>
-            {isLoading
-              ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />...</>
-              : <><Ban className="h-4 w-4 mr-2" />Suspend</>}
+            {isLoading ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />...</> : <><Ban className="h-4 w-4 mr-2" />Suspend</>}
           </Button>
           <Button variant="outline" onClick={onCancel} disabled={isLoading}>Cancel</Button>
         </div>
@@ -126,14 +128,10 @@ function SuspendModal({
 // Helpers
 // ---------------------------------------------------------------------------
 
-// Readable status label
 const statusLabel = (status: string) => {
   const map: Record<string, string> = {
-    pending:   'Pending',
-    active:    'Approved',
-    approved:  'Approved',
-    suspended: 'Suspended',
-    rejected:  'Rejected',
+    pending: 'Pending', active: 'Approved', approved: 'Approved',
+    suspended: 'Suspended', rejected: 'Rejected',
   };
   return map[status] ?? status;
 };
@@ -168,15 +166,43 @@ const formatDate = (d: string) =>
 type TabId = 'pending' | 'managers' | 'agents' | 'suspended' | 'all';
 
 const TABS: { id: TabId; label: string; url: string }[] = [
-  { id: 'pending',   label: 'Pending',    url: '/users/users/?status=pending'   },
-  // validated managers = approved or active
-  // { id: 'managers',  label: 'Managers',   url: '/users/users/?role=manager&status=approved' },
-  { id: 'managers', label: 'Managers', url: '/users/users/?role=manager' },
-  { id: 'agents',    label: 'Agents',     url: '/users/users/?role=agent'       },
-  { id: 'suspended', label: 'Suspended',  url: '/users/users/?status=suspended' },
-  // "All" excludes rejected
-  { id: 'all',       label: 'All',        url: '/users/users/'                  },
+  { id: 'pending',   label: 'Pending',   url: '/users/users/?status=pending'   },
+  { id: 'managers',  label: 'Managers',  url: '/users/users/?role=manager'     },
+  { id: 'agents',    label: 'Agents',    url: '/users/users/?role=agent'       },
+  { id: 'suspended', label: 'Suspended', url: '/users/users/?status=suspended' },
+  { id: 'all',       label: 'All',       url: '/users/users/'                  },
 ];
+
+// ---------------------------------------------------------------------------
+// CompanyBadge — inline company info pills
+// ---------------------------------------------------------------------------
+
+function CompanyInfo({ user }: { user: ManagerUser }) {
+  const items = [
+    user.company_name     && { icon: <Building2 className="h-3 w-3" />, label: user.company_name },
+    user.company_industry && { icon: <Briefcase  className="h-3 w-3" />, label: user.company_industry },
+    user.company_country  && user.company_city
+      ? { icon: <MapPin className="h-3 w-3" />, label: `${user.company_city}, ${user.company_country}` }
+      : user.company_country
+        ? { icon: <Globe className="h-3 w-3" />, label: user.company_country }
+        : null,
+    user.company_current_erp && { icon: <Server className="h-3 w-3" />, label: `ERP: ${user.company_current_erp}` },
+  ].filter(Boolean) as { icon: React.ReactNode; label: string }[];
+
+  if (items.length === 0) return null;
+
+  return (
+    <div className="mt-2 flex flex-wrap gap-1.5">
+      {items.map((item, i) => (
+        <span key={i}
+          className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-sky-50 text-sky-700 dark:bg-sky-900/20 dark:text-sky-300 border border-sky-100 dark:border-sky-800">
+          {item.icon}
+          {item.label}
+        </span>
+      ))}
+    </div>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Main Page
@@ -190,10 +216,6 @@ export function AdminVerificationPage() {
   const [rejectTarget, setRejectTarget]   = useState<ManagerUser | null>(null);
   const [suspendTarget, setSuspendTarget] = useState<ManagerUser | null>(null);
 
-  // -------------------------------------------------------------------------
-  // Fetch
-  // -------------------------------------------------------------------------
-
   const fetchUsers = useCallback(async (tab: TabId) => {
     setIsLoading(true);
     try {
@@ -204,17 +226,8 @@ export function AdminVerificationPage() {
         ? res
         : res?.users ?? res?.pending_managers ?? res?.data ?? [];
 
-      // "All" tab: exclude rejected
-      if (tab === 'all') {
-        list = list.filter(u => u.status !== 'rejected');
-      }
-
-      // Managers tab
-      // setUsers(list);
-    // Managers: include approved AND active (reactivated manager = status 'active')
-      if (tab === 'managers') {
-        list = list.filter(u => u.status === 'approved' || u.status === 'active');
-      }
+      if (tab === 'all')      list = list.filter(u => u.status !== 'rejected');
+      if (tab === 'managers') list = list.filter(u => u.status === 'approved' || u.status === 'active');
 
       setUsers(list);
     } catch (err: any) {
@@ -226,14 +239,7 @@ export function AdminVerificationPage() {
 
   useEffect(() => { fetchUsers(activeTab); }, [activeTab, fetchUsers]);
 
-  const handleTabChange = (tab: TabId) => {
-    setActiveTab(tab);
-    setUsers([]);
-  };
-
-  // -------------------------------------------------------------------------
-  // Approve / Reject
-  // -------------------------------------------------------------------------
+  const handleTabChange = (tab: TabId) => { setActiveTab(tab); setUsers([]); };
 
   const handleApprove = async (user: ManagerUser) => {
     setActionLoading(user.id);
@@ -262,10 +268,6 @@ export function AdminVerificationPage() {
       setActionLoading(null);
     }
   };
-
-  // -------------------------------------------------------------------------
-  // Suspend / Reactivate — managers only, not agents
-  // -------------------------------------------------------------------------
 
   const handleSuspendConfirm = async (reason: string) => {
     if (!suspendTarget) return;
@@ -298,29 +300,17 @@ export function AdminVerificationPage() {
     }
   };
 
-  // -------------------------------------------------------------------------
-  // Render
-  // -------------------------------------------------------------------------
-
   const pendingCount = activeTab === 'pending' ? users.length : 0;
 
   return (
     <>
       {rejectTarget && (
-        <RejectModal
-          manager={rejectTarget}
-          onConfirm={handleRejectConfirm}
-          onCancel={() => setRejectTarget(null)}
-          isLoading={actionLoading === rejectTarget.id}
-        />
+        <RejectModal manager={rejectTarget} onConfirm={handleRejectConfirm}
+          onCancel={() => setRejectTarget(null)} isLoading={actionLoading === rejectTarget.id} />
       )}
       {suspendTarget && (
-        <SuspendModal
-          user={suspendTarget}
-          onConfirm={handleSuspendConfirm}
-          onCancel={() => setSuspendTarget(null)}
-          isLoading={actionLoading === suspendTarget.id}
-        />
+        <SuspendModal user={suspendTarget} onConfirm={handleSuspendConfirm}
+          onCancel={() => setSuspendTarget(null)} isLoading={actionLoading === suspendTarget.id} />
       )}
 
       <div className="space-y-6">
@@ -331,9 +321,7 @@ export function AdminVerificationPage() {
             <p className="text-muted-foreground mt-1">Validate requests and manage accounts</p>
           </div>
           <Button variant="outline" size="sm" onClick={() => fetchUsers(activeTab)} disabled={isLoading}>
-            {isLoading
-              ? <Loader2 className="h-4 w-4 animate-spin" />
-              : <RefreshCw className="h-4 w-4" />}
+            {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
             <span className="ml-2">Refresh</span>
           </Button>
         </div>
@@ -341,15 +329,12 @@ export function AdminVerificationPage() {
         {/* Tabs */}
         <div className="flex gap-1 border-b overflow-x-auto">
           {TABS.map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => handleTabChange(tab.id)}
+            <button key={tab.id} onClick={() => handleTabChange(tab.id)}
               className={`px-4 py-2 text-sm font-medium border-b-2 whitespace-nowrap transition-colors ${
                 activeTab === tab.id
                   ? 'border-indigo-600 text-indigo-600'
                   : 'border-transparent text-muted-foreground hover:text-foreground'
-              }`}
-            >
+              }`}>
               {tab.label}
               {tab.id === 'pending' && pendingCount > 0 && (
                 <span className="ml-2 bg-amber-500 text-white text-xs rounded-full px-1.5 py-0.5">
@@ -377,21 +362,22 @@ export function AdminVerificationPage() {
               const isActing    = actionLoading === user.id;
               const isPending   = user.status === 'pending';
               const isSuspended = user.status === 'suspended';
-              // Only active/approved managers can be suspended by the admin
               const canSuspend  = user.role === 'manager' &&
                                   (user.status === 'active' || user.status === 'approved');
 
               return (
-                <div key={user.id} className="border rounded-lg p-4">
-                  <div className="flex items-center justify-between gap-4">
+                <div key={user.id} className="border rounded-xl p-4 hover:shadow-sm transition-shadow">
+                  <div className="flex items-start justify-between gap-4">
+
                     {/* Info */}
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-indigo-100 dark:bg-indigo-900 shrink-0">
+                    <div className="flex items-start gap-3 min-w-0 flex-1">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-indigo-100 dark:bg-indigo-900 shrink-0 mt-0.5">
                         <UserIcon className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
                       </div>
-                      <div className="min-w-0">
+                      <div className="min-w-0 flex-1">
+                        {/* Name + badges */}
                         <div className="flex items-center gap-2 flex-wrap">
-                          <p className="font-medium">{user.full_name}</p>
+                          <p className="font-semibold text-sm">{user.full_name}</p>
                           <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${roleBadge(user.role)}`}>
                             {user.role}
                           </span>
@@ -399,32 +385,29 @@ export function AdminVerificationPage() {
                             {statusLabel(user.status)}
                           </span>
                         </div>
+
+                        {/* Contact row */}
                         <div className="flex items-center gap-3 mt-1 flex-wrap">
                           <span className="flex items-center gap-1 text-xs text-muted-foreground">
                             <Mail className="h-3 w-3" />{user.email}
                           </span>
-                          {user.company_name && (
-                            <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                              <Building2 className="h-3 w-3" />{user.company_name}
-                            </span>
-                          )}
                           <span className="flex items-center gap-1 text-xs text-muted-foreground">
                             <Calendar className="h-3 w-3" />{formatDate(user.created_at)}
                           </span>
                         </div>
+
+                        {/* ✅ Company info pills — visible for managers */}
+                        {user.role === 'manager' && <CompanyInfo user={user} />}
                       </div>
                     </div>
 
                     {/* Actions */}
-                    <div className="flex items-center gap-2 shrink-0">
-                      {/* Pending: Approve / Reject */}
+                    <div className="flex items-center gap-2 shrink-0 mt-0.5">
                       {isPending && (
                         <>
                           <Button size="sm" onClick={() => handleApprove(user)} disabled={isActing}
                             className="bg-green-600 hover:bg-green-700 text-white gap-1">
-                            {isActing
-                              ? <Loader2 className="h-3 w-3 animate-spin" />
-                              : <Check className="h-3 w-3" />}
+                            {isActing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
                             Approve
                           </Button>
                           <Button size="sm" variant="outline" onClick={() => setRejectTarget(user)} disabled={isActing}
@@ -433,29 +416,22 @@ export function AdminVerificationPage() {
                           </Button>
                         </>
                       )}
-
-                      {/* Approved manager: Suspend */}
                       {canSuspend && (
                         <Button size="sm" variant="outline" onClick={() => setSuspendTarget(user)} disabled={isActing}
                           className="text-orange-600 border-orange-200 hover:bg-orange-50 gap-1">
-                          {isActing
-                            ? <Loader2 className="h-3 w-3 animate-spin" />
-                            : <Ban className="h-3 w-3" />}
+                          {isActing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Ban className="h-3 w-3" />}
                           Suspend
                         </Button>
                       )}
-
-                      {/* Suspended: Reactivate */}
                       {isSuspended && (
                         <Button size="sm" variant="outline" onClick={() => handleReactivate(user)} disabled={isActing}
                           className="text-green-600 border-green-200 hover:bg-green-50 gap-1">
-                          {isActing
-                            ? <Loader2 className="h-3 w-3 animate-spin" />
-                            : <UserCheck className="h-3 w-3" />}
+                          {isActing ? <Loader2 className="h-3 w-3 animate-spin" /> : <UserCheck className="h-3 w-3" />}
                           Reactivate
                         </Button>
                       )}
                     </div>
+
                   </div>
                 </div>
               );

@@ -86,13 +86,18 @@ function mapListItem(item: UserListItem): User {
   };
 }
 
+// ✅ FIXED — added industry, country, city, currentErp
 interface SignupData {
-  name: string;
-  email: string;
-  password: string;
-  role: UserRole;
-  companyName: string;
-  phone?: string;
+  name:         string;
+  email:        string;
+  password:     string;
+  role:         UserRole;
+  companyName:  string;
+  phone?:       string;
+  industry?:    string;   // ← NEW
+  country?:     string;   // ← NEW
+  city?:        string;   // ← NEW
+  currentErp?:  string;   // ← NEW
 }
 
 interface AuthContextType {
@@ -179,7 +184,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (err instanceof ApiError) {
         if (err.status === 401) return { success: false, message: 'Incorrect email or password' };
         if (err.status === 403) return { success: false, message: 'Your account is pending validation' };
-        return { success: false, message: err.userMessage };
+        return { success: false, message: err.message };
       }
       return { success: false, message: 'Connection error' };
     } finally {
@@ -197,21 +202,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     setIsLoading(true);
     try {
-      const nameParts = userData.name.trim().split(' ');
+      const nameParts  = userData.name.trim().split(' ');
       const first_name = nameParts[0] || userData.name;
-      const last_name = nameParts.slice(1).join(' ') || first_name; // fallback: repeat first name
+      const last_name  = nameParts.slice(1).join(' ') || first_name;
+
       await authApi.managerSignup({
-        email: userData.email,
+        email:            userData.email,
         first_name,
         last_name,
-        phone_number: userData.phone,
-        company_name: userData.companyName.trim(),
-        password: userData.password,
+        phone_number:     userData.phone       ?? '',
+        company_name:     userData.companyName.trim(),
+        // ✅ NEW fields forwarded to backend
+        industry:         userData.industry    ?? '',
+        country:          userData.country     ?? '',
+        city:             userData.city        ?? '',
+        current_erp:      userData.currentErp  ?? '',
+        password:         userData.password,
         password_confirm: userData.password,
       });
       return { success: true, message: 'Account created! Awaiting verification by the admin.' };
     } catch (err) {
-      return { success: false, message: err instanceof ApiError ? err.userMessage : 'Error during registration' };
+      return { success: false, message: err instanceof ApiError ? err.message : 'Error during registration' };
     } finally {
       setIsLoading(false);
     }
@@ -242,16 +253,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     branchId?: string;
     tempPassword?: string;
   }) => {
-    const nameParts = userData.name.trim().split(' ');
+    const nameParts  = userData.name.trim().split(' ');
     const first_name = nameParts[0] || userData.name;
-    const last_name = nameParts.slice(1).join(' ') || first_name; // ← fix: never send empty string
+    const last_name  = nameParts.slice(1).join(' ') || first_name;
 
     const payload = {
       email: userData.email,
       first_name,
       last_name,
       ...(userData.branchId ? { branch: userData.branchId } : {}),
-      permissions_list: userData.permissions,
+      permissions_list:   userData.permissions,
       temporary_password: userData.tempPassword || 'Agent@123456',
     };
 

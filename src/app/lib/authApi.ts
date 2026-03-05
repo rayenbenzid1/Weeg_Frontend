@@ -38,6 +38,10 @@ export interface ManagerSignupPayload {
   company_name: string;
   password: string;
   password_confirm: string;
+  industry?: string;   // ← NEW
+  country?: string;   // ← NEW
+  city?: string;   // ← NEW
+  current_erp?: string; 
 }
 
 export interface CreateAgentPayload {

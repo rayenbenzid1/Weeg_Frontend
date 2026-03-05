@@ -1,18 +1,12 @@
 import {
-  DollarSign, ShoppingCart, Package, TrendingUp,
-  AlertTriangle, BarChart3, Wallet, Loader2,
+  ShoppingCart, Package, TrendingUp,
+  AlertTriangle, Wallet, Loader2,
+  ArrowUpRight,
 } from 'lucide-react';
-import { useState } from 'react';
-import { KPICard } from '../components/KPICard';
-import { ChartCard } from '../components/ChartCard';
-import { Badge } from '../components/ui/badge';
-import { Progress } from '../components/ui/progress';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import {
-  LineChart, Line, BarChart, Bar, AreaChart, Area,
-  PieChart, Pie, Cell,
-  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+  AreaChart, Area, BarChart, Bar,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+  ResponsiveContainer, Cell,
 } from 'recharts';
 import {
   useKPIs,
@@ -22,396 +16,445 @@ import {
   useBranchSummary,
   useBranchBreakdown,
   useCategoryBreakdown,
+  useBranchMonthly,
   MOVEMENT_TYPES,
-  useTypeBreakdown,  
+  useTypeBreakdown,
 } from '../lib/dataHooks';
-import { formatCurrency, formatNumber } from '../lib/utils';
+import { formatCurrency } from '../lib/utils';
 
-// ── Helpers ───────────────────────────────────────────────────────────────
+// ── Brand palette (chart colors only — never used for backgrounds/text) ──
+
+const C = {
+  indigo:  '#6366f1',
+  violet:  '#8b5cf6',
+  cyan:    '#0ea5e9',
+  teal:    '#14b8a6',
+  emerald: '#10b981',
+  amber:   '#f59e0b',
+  orange:  '#f97316',
+  rose:    '#f43f5e',
+};
+
+const BRANCH_COLORS = [C.indigo, C.cyan, C.teal, C.emerald, C.amber, C.rose];
 
 const AGING_COLORS: Record<string, string> = {
-  current: '#10b981',
-  d1_30: '#34d399',
-  d31_60: '#f59e0b',
-  d61_90: '#f97316',
-  d91_120: '#ef4444',
-  d121_150: '#dc2626',
-  d151_180: '#b91c1c',
-  d181_210: '#991b1b',
-  d211_240: '#7f1d1d',
+  current:  C.emerald,
+  d1_30:    '#34d399',
+  d31_60:   C.amber,
+  d61_90:   C.orange,
+  d91_120:  C.rose,
+  d121_150: '#e11d48',
+  d151_180: '#be123c',
+  d181_210: '#9f1239',
+  d211_240: '#881337',
   d241_270: '#78350f',
   d271_300: '#92400e',
-  d301_330: '#6b21a8',
+  d301_330: '#7c3aed',
   over_330: '#4c1d95',
 };
 
-const BRANCH_COLORS = ['#4f46e5', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b', '#ef4444'];
+// ── CSS-variable-based helpers ────────────────────────────────────────────
+// These map to whatever the active theme (light/dark) defines.
 
-function LoadingState({ label }: { label: string }) {
+// hsl(var(--card))            → card background
+// hsl(var(--card-foreground)) → text on card
+// hsl(var(--border))          → border color
+// hsl(var(--muted))           → subtle bg (skeleton, track)
+// hsl(var(--muted-foreground))→ secondary text
+// hsl(var(--background))      → page background
+// hsl(var(--foreground))      → primary text
+
+const css = {
+  card:       'hsl(var(--card))',
+  cardFg:     'hsl(var(--card-foreground))',
+  border:     'hsl(var(--border))',
+  muted:      'hsl(var(--muted))',
+  mutedFg:    'hsl(var(--muted-foreground))',
+  bg:         'hsl(var(--background))',
+  fg:         'hsl(var(--foreground))',
+  popover:    'hsl(var(--popover))',
+  popoverFg:  'hsl(var(--popover-foreground))',
+};
+
+const cardStyle: React.CSSProperties = {
+  background:   css.card,
+  borderRadius: 16,
+  padding:      24,
+  boxShadow:    '0 1px 3px rgba(0,0,0,0.08), 0 4px 20px rgba(0,0,0,0.05)',
+  border:       `1px solid ${css.border}`,
+};
+
+const axisStyle = { fontSize: 11, fill: 'hsl(var(--muted-foreground))' };
+
+// ── Custom Tooltip ────────────────────────────────────────────────────────
+
+function CustomTooltip({ active, payload, label }: any) {
+  if (!active || !payload?.length) return null;
   return (
-    <div className="flex items-center justify-center h-32 text-muted-foreground gap-2">
-      <Loader2 className="h-4 w-4 animate-spin" />
-      <span className="text-sm">{label}</span>
+    <div style={{
+      background:   css.popover,
+      border:       `1px solid ${css.border}`,
+      borderRadius: 10,
+      padding:      '10px 14px',
+      boxShadow:    '0 8px 24px rgba(0,0,0,0.15)',
+      fontSize:     12,
+    }}>
+      <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: css.mutedFg, marginBottom: 6 }}>
+        {label}
+      </p>
+      {payload.map((p: any, i: number) => (
+        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 }}>
+          <span style={{ width: 8, height: 8, borderRadius: '50%', background: p.color, display: 'inline-block', flexShrink: 0 }} />
+          <span style={{ color: css.mutedFg }}>{p.name}</span>
+          <span style={{ marginLeft: 'auto', paddingLeft: 16, fontWeight: 700, color: css.popoverFg }}>
+            {formatCurrency(p.value)}
+          </span>
+        </div>
+      ))}
     </div>
   );
 }
 
-function ErrorState({ message }: { message: string }) {
+// ── Loader / Empty ────────────────────────────────────────────────────────
+
+function Loader({ label }: { label: string }) {
   return (
-    <div className="flex items-center justify-center h-24 text-destructive text-sm">
-      {message}
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 120, gap: 8, color: css.mutedFg }}>
+      <Loader2 size={15} className="animate-spin" />
+      <span style={{ fontSize: 13 }}>{label}</span>
     </div>
   );
 }
 
-// ─────────────────────────────────────────────
-// Page
-// ─────────────────────────────────────────────
+function Empty() {
+  return (
+    <div style={{ height: 120, display: 'flex', alignItems: 'center', justifyContent: 'center', color: css.mutedFg, fontSize: 13 }}>
+      No data available
+    </div>
+  );
+}
+
+// ── KPI Card ──────────────────────────────────────────────────────────────
+
+function KPI({ title, value, icon: Icon, accent }: { title: string; value: string; icon: React.ElementType; accent: string }) {
+  return (
+    <div style={{ ...cardStyle, position: 'relative', overflow: 'hidden' }}>
+      {/* soft glow */}
+      <div style={{
+        position: 'absolute', top: -24, right: -24, width: 80, height: 80,
+        borderRadius: '50%', background: accent, opacity: 0.08,
+        filter: 'blur(20px)', pointerEvents: 'none',
+      }} />
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+        <div style={{
+          width: 40, height: 40, borderRadius: 12,
+          background: `${accent}18`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <Icon size={17} style={{ color: accent }} />
+        </div>
+        <ArrowUpRight size={13} style={{ color: C.emerald }} />
+      </div>
+      <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: css.mutedFg }}>
+        {title}
+      </p>
+      <p style={{ fontSize: 20, fontWeight: 800, color: css.cardFg, marginTop: 4, letterSpacing: '-0.03em' }}>
+        {value}
+      </p>
+    </div>
+  );
+}
+
+// ── Panel ─────────────────────────────────────────────────────────────────
+
+function Panel({ title, sub, children }: { title: string; sub?: string; children: React.ReactNode }) {
+  return (
+    <div style={cardStyle}>
+      <div style={{ marginBottom: 20 }}>
+        <h3 style={{ fontSize: 14, fontWeight: 700, color: css.cardFg, margin: 0 }}>{title}</h3>
+        {sub && <p style={{ fontSize: 12, color: css.mutedFg, marginTop: 3 }}>{sub}</p>}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+// ── Aging Bar Chart ───────────────────────────────────────────────────────
+
+function AgingBarChart({ data }: { data: Array<{ label: string; total: number; fill: string }> }) {
+  if (!data.length) return <Empty />;
+  const chartData = data.map(d => ({ label: d.label, value: d.total, fill: d.fill }));
+  return (
+    <ResponsiveContainer width="100%" height={260}>
+      <BarChart data={chartData} margin={{ top: 4, right: 4, left: 0, bottom: 40 }} barCategoryGap="22%">
+        <CartesianGrid strokeDasharray="4 4" stroke={css.border} vertical={false} />
+        <XAxis
+          dataKey="label"
+          tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }}
+          axisLine={false} tickLine={false}
+          angle={-40} textAnchor="end" interval={0}
+        />
+        <YAxis
+          tick={axisStyle} axisLine={false} tickLine={false}
+          tickFormatter={v => `${(v / 1000).toFixed(0)}k`}
+        />
+        <Tooltip content={<CustomTooltip />} />
+        <Bar dataKey="value" name="Amount" radius={[5, 5, 0, 0]}>
+          {chartData.map((entry, i) => <Cell key={i} fill={entry.fill} />)}
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+// ── Category Bars ─────────────────────────────────────────────────────────
+
+function CategoryBars({ data }: { data: Array<{ category: string; value: number; fill: string }> }) {
+  const max = Math.max(...data.map(d => d.value), 1);
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
+      {data.map((d, i) => (
+        <div key={i}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
+            <span style={{ fontSize: 12, color: css.mutedFg, fontWeight: 500 }}>{d.category}</span>
+            <span style={{ fontSize: 12, fontWeight: 700, color: css.cardFg }}>{formatCurrency(d.value)}</span>
+          </div>
+          <div style={{ height: 6, borderRadius: 999, background: css.muted, overflow: 'hidden' }}>
+            <div style={{
+              height: '100%', borderRadius: 999,
+              width: `${(d.value / max) * 100}%`,
+              background: `linear-gradient(90deg, ${d.fill}70, ${d.fill})`,
+              transition: 'width 0.5s cubic-bezier(0.4,0,0.2,1)',
+            }} />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Page ──────────────────────────────────────────────────────────────────
 
 export function DashboardPage() {
-  const [selectedBranch, setSelectedBranch] = useState('all');
-
-  // ── Data hooks ────────────────────────────────────────────────────────────
-  const kpi = useKPIs();
-  const summary = useTransactionSummary();
-  const agingDist = useAgingDistribution();
-  const agingRisk = useAgingRisk({ limit: 5 });
+  const kpi                = useKPIs();
+  const summary            = useTransactionSummary();
+  const agingDist          = useAgingDistribution();
+  const agingRisk          = useAgingRisk({ limit: 5 });
   const branchStockSummary = useBranchSummary();
-  const branchSales = useBranchBreakdown({ movement_type: MOVEMENT_TYPES.SALE });
-  const categoryBreakdown = useCategoryBreakdown();
-  const typeBreakdown = useTypeBreakdown();
+  const branchSales        = useBranchBreakdown({ movement_type: MOVEMENT_TYPES.SALE });
+  const categoryBreakdown  = useCategoryBreakdown();
+  const typeBreakdown      = useTypeBreakdown();
+  const branchMonthly      = useBranchMonthly({ movement_type: MOVEMENT_TYPES.SALE });
 
-  // ── KPI derived values ─────────────────────────────────────────────────
   const kpiData = kpi.data;
-  const monthlySales = summary.data?.summary ?? [];
 
-  // Chart: last 12 months for trend line
-  const trendChartData = [...monthlySales]
+  const trendData = [...(summary.data?.summary ?? [])]
     .sort((a, b) => a.year - b.year || a.month - b.month)
     .slice(-12)
-    .map(m => ({
-      month: `${m.month_label} ${m.year}`,
-      sales: m.total_sales,
-      purchases: m.total_purchases,
-    }));
+    .map(m => ({ month: m.month_label, sales: m.total_sales, purchases: m.total_purchases }));
 
-  // Chart: aging distribution — filter non-zero buckets for pie
-  const agingPieData = (agingDist.data?.distribution ?? [])
+  const agingBars = (agingDist.data?.distribution ?? [])
     .filter(b => b.total > 0)
-    .map(b => ({ name: b.label, value: b.total, fill: AGING_COLORS[b.bucket] ?? '#6b7280' }));
+    .map(b => ({ ...b, fill: AGING_COLORS[b.bucket] ?? '#94a3b8' }));
 
-  // Chart: branch performance
   const branchStockMap = Object.fromEntries(
     (branchStockSummary.data?.branches ?? []).map(b => [b.branch, b.total_value])
   );
   const branchPerfData = (branchSales.data?.branches ?? []).map(b => ({
-    branch: b.branch,
-    sales: b.total,
-    stock: branchStockMap[b.branch] ?? 0,
+    branch: b.branch, sales: b.total, stock: branchStockMap[b.branch] ?? 0,
   }));
 
-  // Chart: category breakdown
   const categoryData = (categoryBreakdown.data?.categories ?? []).slice(0, 8).map((c, i) => ({
-    category: c.category,
-    value: c.total_value,
-    fill: BRANCH_COLORS[i % BRANCH_COLORS.length],
+    category: c.category, value: c.total_value, fill: BRANCH_COLORS[i % BRANCH_COLORS.length],
   }));
-// 3. Extraire total purchases de la même source que KPIEnginePage :
-const totalPurchases = (typeBreakdown.data?.breakdown ?? [])
-  .find(t => t.movement_type === MOVEMENT_TYPES.PURCHASE)
-  ?.total_in ?? 0;
+
+  const totalPurchases = (typeBreakdown.data?.breakdown ?? [])
+    .find(t => t.movement_type === MOVEMENT_TYPES.PURCHASE)?.total_in ?? 0;
+
+  const legendStyle = { fontSize: 12, color: 'hsl(var(--muted-foreground))', paddingTop: 8 };
+
   return (
-    <div className="space-y-6">
+    <div style={{ background: css.bg, minHeight: '100vh', padding: '32px 28px' }}>
+
       {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold">Dashboard Overview</h1>
-        <p className="text-muted-foreground mt-1">
+      <div style={{ marginBottom: 28 }}>
+        <h1 style={{ fontSize: 24, fontWeight: 800, color: css.fg, letterSpacing: '-0.03em', margin: 0 }}>
+          Dashboard Overview
+        </h1>
+        <p style={{ fontSize: 13, color: css.mutedFg, marginTop: 4 }}>
           Monitor your business performance and key metrics
         </p>
       </div>
 
-      {/* Filters */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Filters</CardTitle>
-          <CardDescription>Customize your dashboard view</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-4 md:grid-cols-2">
-            <div>
-              <label className="text-sm font-medium mb-2 block">Branch</label>
-              <Select value={selectedBranch} onValueChange={setSelectedBranch}>
-                <SelectTrigger>
-                  <SelectValue placeholder="All branches" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Branches</SelectItem>
-                  {(branchStockSummary.data?.branches ?? []).map(b => (
-                    <SelectItem key={b.branch} value={b.branch}>{b.branch}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* KPI Cards */}
+      {/* KPIs */}
       {kpi.loading ? (
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Card key={i} className="animate-pulse h-32" />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 16, marginBottom: 24 }}>
+          {[...Array(4)].map((_, i) => (
+            <div key={i} style={{ height: 110, borderRadius: 16, background: css.muted, opacity: 0.5 }} />
           ))}
         </div>
-      ) : kpi.error ? (
-        <ErrorState message={kpi.error} />
       ) : (
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-          <KPICard
-            title="Total Sales"
-            value={formatCurrency(kpiData?.totalSalesValue ?? 0)}
-            icon={TrendingUp}
-          />
-        <KPICard
-          title="Total Purchases"
-          value={formatCurrency(totalPurchases)}
-          icon={ShoppingCart}
-        />
-          <KPICard
-            title="Current Stock Value"
-            value={formatCurrency(kpiData?.stockValue ?? 0)}
-            icon={Package}
-          />
-          <KPICard
-            title="Total Receivables"
-            value={formatCurrency(kpiData?.totalReceivables ?? 0)}
-            icon={Wallet}
-          />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 16, marginBottom: 24 }}>
+          <KPI title="Total Sales"         value={formatCurrency(kpiData?.totalSalesValue ?? 0)} icon={TrendingUp}   accent={C.indigo} />
+          <KPI title="Total Purchases"     value={formatCurrency(totalPurchases)}                icon={ShoppingCart} accent={C.amber}  />
+          <KPI title="Current Stock Value" value={formatCurrency(kpiData?.stockValue ?? 0)}      icon={Package}      accent={C.cyan}   />
+          <KPI title="Total Receivables"   value={formatCurrency(kpiData?.totalReceivables ?? 0)} icon={Wallet}      accent={C.violet} />
         </div>
       )}
 
-      {/* Charts Row 1 */}
-      <div className="grid gap-6 md:grid-cols-2">
-        {/* Sales vs Purchases monthly trend */}
-        <ChartCard
-          title="Sales vs Purchases"
-          description="Monthly comparison over the last 12 months"
-        >
-          {summary.loading ? (
-            <LoadingState label="Loading trend data…" />
-          ) : trendChartData.length === 0 ? (
-            <div className="flex items-center justify-center h-32 text-sm text-muted-foreground">
-              No transaction data available
-            </div>
-          ) : (
-            <ResponsiveContainer width="100%" height={280}>
-              <LineChart data={trendChartData}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                <XAxis dataKey="month" className="text-xs" tick={{ fontSize: 10 }} />
-                <YAxis className="text-xs" tickFormatter={v => `${(v / 1000).toFixed(0)}k`} />
-                <Tooltip
-                  formatter={(v: number) => formatCurrency(v)}
-                  contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))' }}
-                />
-                <Legend />
-                <Line type="monotone" dataKey="sales" stroke="#4f46e5" strokeWidth={2} name="Sales" dot={false} />
-                <Line type="monotone" dataKey="purchases" stroke="#f59e0b" strokeWidth={2} name="Purchases" dot={false} />
-              </LineChart>
+      {/* Row 1: Sales trend + Branch performance */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+
+        <Panel title="Sales vs Purchases" sub="Monthly comparison — last 12 months">
+          {summary.loading ? <Loader label="Loading…" /> : trendData.length === 0 ? <Empty /> : (
+            <ResponsiveContainer width="100%" height={260}>
+              <AreaChart data={trendData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="gS" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%"  stopColor={C.indigo} stopOpacity={0.2} />
+                    <stop offset="95%" stopColor={C.indigo} stopOpacity={0} />
+                  </linearGradient>
+                  <linearGradient id="gP" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%"  stopColor={C.amber} stopOpacity={0.2} />
+                    <stop offset="95%" stopColor={C.amber} stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="4 4" stroke={css.border} vertical={false} />
+                <XAxis dataKey="month" tick={axisStyle} axisLine={false} tickLine={false} />
+                <YAxis tick={axisStyle} axisLine={false} tickLine={false} tickFormatter={v => `${(v/1000).toFixed(0)}k`} />
+                <Tooltip content={<CustomTooltip />} />
+                <Legend wrapperStyle={legendStyle} iconType="circle" iconSize={8} />
+                <Area type="monotone" dataKey="sales"     stroke={C.indigo} strokeWidth={2.5} fill="url(#gS)" name="Sales"     dot={false} activeDot={{ r: 4, strokeWidth: 0 }} />
+                <Area type="monotone" dataKey="purchases" stroke={C.amber}  strokeWidth={2.5} fill="url(#gP)" name="Purchases" dot={false} activeDot={{ r: 4, strokeWidth: 0 }} />
+              </AreaChart>
             </ResponsiveContainer>
           )}
-        </ChartCard>
+        </Panel>
 
-        {/* Branch performance */}
-        <ChartCard
-          title="Branch Performance"
-          description="Sales vs stock value comparison per branch"
-        >
-          {branchSales.loading || branchStockSummary.loading ? (
-            <LoadingState label="Loading branch data…" />
-          ) : branchPerfData.length === 0 ? (
-            <div className="flex items-center justify-center h-32 text-sm text-muted-foreground">
-              No branch data available
-            </div>
-          ) : (
-            <ResponsiveContainer width="100%" height={280}>
-              <BarChart data={branchPerfData}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                <XAxis dataKey="branch" className="text-xs" tick={{ fontSize: 10 }} />
-                <YAxis className="text-xs" tickFormatter={v => `${(v / 1000).toFixed(0)}k`} />
-                <Tooltip
-                  formatter={(v: number) => formatCurrency(v)}
-                  contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))' }}
-                />
-                <Legend />
-                <Bar dataKey="sales" fill="#4f46e5" name="Sales" />
-                <Bar dataKey="stock" fill="#8b5cf6" name="Stock Value" />
+        <Panel title="Branch Performance" sub="Sales vs stock value per branch">
+          {branchSales.loading || branchStockSummary.loading ? <Loader label="Loading…" /> :
+           branchPerfData.length === 0 ? <Empty /> : (
+            <ResponsiveContainer width="100%" height={260}>
+              <BarChart data={branchPerfData} barCategoryGap="36%" margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="4 4" stroke={css.border} vertical={false} />
+                <XAxis dataKey="branch" tick={axisStyle} axisLine={false} tickLine={false} />
+                <YAxis tick={axisStyle} axisLine={false} tickLine={false} tickFormatter={v => `${(v/1000).toFixed(0)}k`} />
+                <Tooltip content={<CustomTooltip />} />
+                <Legend wrapperStyle={legendStyle} iconType="circle" iconSize={8} />
+                <Bar dataKey="sales" fill={C.indigo} name="Sales"       radius={[5,5,0,0]} />
+                <Bar dataKey="stock" fill={C.cyan}   name="Stock Value" radius={[5,5,0,0]} fillOpacity={0.75} />
               </BarChart>
             </ResponsiveContainer>
           )}
-        </ChartCard>
+        </Panel>
       </div>
 
-      {/* Charts Row 2 */}
-      <div className="grid gap-6 md:grid-cols-2">
-        {/* Aging receivables distribution */}
-        <ChartCard
-          title="Aging Receivables Distribution"
-          description="Breakdown of outstanding receivables by aging period"
-        >
-          {agingDist.loading ? (
-            <LoadingState label="Loading aging data…" />
-          ) : agingPieData.length === 0 ? (
-            <div className="flex items-center justify-center h-32 text-sm text-muted-foreground">
-              No aging data available
-            </div>
-          ) : (
-            <ResponsiveContainer width="100%" height={280}>
-              <PieChart>
-                <Pie
-                  data={agingPieData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={55}
-                  outerRadius={95}
-                  paddingAngle={2}
-                  dataKey="value"
-                >
-                  {agingPieData.map((entry, i) => (
-                    <Cell key={i} fill={entry.fill} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  formatter={(v: number) => formatCurrency(v)}
-                  contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))' }}
-                />
-                <Legend />
-              </PieChart>
-            </ResponsiveContainer>
-          )}
-        </ChartCard>
+      {/* Row 2: Aging + Category */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
 
-        {/* Category breakdown */}
-        <ChartCard
-          title="Inventory by Category"
-          description="Stock value distribution across product categories"
-        >
-          {categoryBreakdown.loading ? (
-            <LoadingState label="Loading category data…" />
-          ) : categoryData.length === 0 ? (
-            <div className="flex items-center justify-center h-32 text-sm text-muted-foreground">
-              No category data available
-            </div>
-          ) : (
-            <ResponsiveContainer width="100%" height={280}>
-              <BarChart data={categoryData} layout="vertical">
-                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                <XAxis type="number" className="text-xs" tickFormatter={v => `${(v / 1000).toFixed(0)}k`} />
-                <YAxis type="category" dataKey="category" className="text-xs" width={90} tick={{ fontSize: 10 }} />
-                <Tooltip
-                  formatter={(v: number) => formatCurrency(v)}
-                  contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))' }}
-                />
-                <Bar dataKey="value" name="Stock Value">
-                  {categoryData.map((entry, i) => (
-                    <Cell key={i} fill={entry.fill} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          )}
-        </ChartCard>
+        <Panel title="Aging Receivables" sub="Outstanding balances by period">
+          {agingDist.loading ? <Loader label="Loading…" /> : <AgingBarChart data={agingBars} />}
+        </Panel>
+
+        <Panel title="Inventory by Category" sub="Stock value across product categories">
+          {categoryBreakdown.loading ? <Loader label="Loading…" /> :
+           categoryData.length === 0 ? <Empty /> : <CategoryBars data={categoryData} />}
+        </Panel>
       </div>
 
       {/* Top Risky Customers */}
-      <ChartCard
-        title="Top Risky Customers"
-        description="Customers with highest overdue balances — requires immediate attention"
-      >
-        {agingRisk.loading ? (
-          <LoadingState label="Loading risk data…" />
-        ) : !agingRisk.data || agingRisk.data.top_risk.length === 0 ? (
-          <div className="flex items-center justify-center h-24 text-sm text-muted-foreground">
-            No at-risk customers found
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {agingRisk.data.top_risk.map((item) => {
-              const overduePct = item.total > 0
-                ? Math.min(100, (item.overdue_total / item.total) * 100)
-                : 0;
-              return (
-                <div key={item.id} className="flex items-center gap-4">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between mb-1">
-                      <div className="min-w-0">
-                        <p className="font-medium truncate">
-                          {item.customer_name || item.account}
-                        </p>
-                        <p className="text-xs text-muted-foreground">{item.account_code}</p>
+      <div style={{ marginBottom: 16 }}>
+        <Panel title="Top Risky Customers" sub="Customers with highest overdue balances">
+          {agingRisk.loading ? <Loader label="Loading…" /> :
+           !agingRisk.data || agingRisk.data.top_risk.length === 0 ? <Empty /> : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              {agingRisk.data.top_risk.map(item => {
+                const pct = item.total > 0 ? Math.min(100, (item.overdue_total / item.total) * 100) : 0;
+                const crit = item.risk_score === 'critical' || item.risk_score === 'high';
+                const accent = crit ? C.rose : C.amber;
+                return (
+                  <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div style={{
+                      width: 36, height: 36, borderRadius: 10, flexShrink: 0,
+                      background: `${accent}18`, border: `1px solid ${accent}35`,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}>
+                      <AlertTriangle size={15} style={{ color: accent }} />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                        <div>
+                          <p style={{ fontSize: 13, fontWeight: 600, color: css.cardFg, margin: 0 }}>
+                            {item.customer_name || item.account}
+                          </p>
+                          <p style={{ fontSize: 11, color: css.mutedFg, margin: 0 }}>{item.account_code}</p>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: css.cardFg }}>
+                            {formatCurrency(item.overdue_total)}
+                          </span>
+                          <span style={{
+                            fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 20,
+                            textTransform: 'uppercase', letterSpacing: '0.05em',
+                            background: `${accent}18`, color: accent, border: `1px solid ${accent}35`,
+                          }}>
+                            {item.risk_score}
+                          </span>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-3 shrink-0 ml-3">
-                        <span className="text-sm text-muted-foreground">
-                          {formatCurrency(item.overdue_total)}
-                        </span>
-                        <Badge
-                          variant={
-                            item.risk_score === 'critical' ? 'destructive'
-                            : item.risk_score === 'high' ? 'destructive'
-                            : 'secondary'
-                          }
-                          className="capitalize"
-                        >
-                          {item.risk_score}
-                        </Badge>
+                      <div style={{ height: 5, borderRadius: 999, background: css.muted, overflow: 'hidden' }}>
+                        <div style={{
+                          height: '100%', borderRadius: 999, width: `${pct}%`,
+                          background: `linear-gradient(90deg, ${accent}55, ${accent})`,
+                          transition: 'width 0.5s ease',
+                        }} />
                       </div>
                     </div>
-                    <Progress
-                      value={overduePct}
-                      className="h-1.5"
-                    />
                   </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </ChartCard>
+                );
+              })}
+            </div>
+          )}
+        </Panel>
+      </div>
 
-      {/* Margin / Revenue trend */}
-      <ChartCard
-        title="Revenue Trend"
-        description="Cumulative sales revenue over time"
-      >
-        {summary.loading ? (
-          <LoadingState label="Loading revenue data…" />
-        ) : (
-          <ResponsiveContainer width="100%" height={280}>
-            <AreaChart data={trendChartData}>
+      {/* Revenue Trend by Branch */}
+      <Panel title="Revenue Trend by Branch" sub="Monthly sales revenue — one line per branch">
+        {branchMonthly.loading ? <Loader label="Loading…" /> :
+         !branchMonthly.data || branchMonthly.data.monthly_data.length === 0 ? <Empty /> : (
+          <ResponsiveContainer width="100%" height={300}>
+            <AreaChart data={branchMonthly.data.monthly_data} margin={{ top: 10, right: 4, left: 0, bottom: 0 }}>
               <defs>
-                <linearGradient id="colorSales" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="#4f46e5" stopOpacity={0} />
-                </linearGradient>
+                {branchMonthly.data.branches.map((branch, i) => (
+                  <linearGradient key={branch} id={`gb-${i}`} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%"  stopColor={BRANCH_COLORS[i % BRANCH_COLORS.length]} stopOpacity={0.18} />
+                    <stop offset="95%" stopColor={BRANCH_COLORS[i % BRANCH_COLORS.length]} stopOpacity={0} />
+                  </linearGradient>
+                ))}
               </defs>
-              <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-              <XAxis dataKey="month" className="text-xs" tick={{ fontSize: 10 }} />
-              <YAxis className="text-xs" tickFormatter={v => `${(v / 1000).toFixed(0)}k`} />
-              <Tooltip
-                formatter={(v: number) => formatCurrency(v)}
-                contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))' }}
-              />
-              <Area
-                type="monotone"
-                dataKey="sales"
-                stroke="#4f46e5"
-                strokeWidth={2}
-                fill="url(#colorSales)"
-                name="Revenue"
-              />
+              <CartesianGrid strokeDasharray="4 4" stroke={css.border} vertical={false} />
+              <XAxis dataKey="month" tick={axisStyle} axisLine={false} tickLine={false} />
+              <YAxis tick={axisStyle} axisLine={false} tickLine={false} tickFormatter={v => `${(v/1000).toFixed(0)}k`} />
+              <Tooltip content={<CustomTooltip />} />
+              <Legend wrapperStyle={legendStyle} iconType="circle" iconSize={8} />
+              {branchMonthly.data.branches.map((branch, i) => (
+                <Area
+                  key={branch}
+                  type="monotone"
+                  dataKey={branch}
+                  stroke={BRANCH_COLORS[i % BRANCH_COLORS.length]}
+                  strokeWidth={2}
+                  fill={`url(#gb-${i})`}
+                  dot={false}
+                  activeDot={{ r: 5, strokeWidth: 0, fill: BRANCH_COLORS[i % BRANCH_COLORS.length] }}
+                  name={branch}
+                />
+              ))}
             </AreaChart>
           </ResponsiveContainer>
         )}
-      </ChartCard>
+      </Panel>
+
     </div>
   );
 }
