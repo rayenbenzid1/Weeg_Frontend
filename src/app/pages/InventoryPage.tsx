@@ -1,5 +1,5 @@
 // src/app/pages/InventoryPage.tsx
-import { useState, useMemo, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Package, AlertTriangle, TrendingUp, RefreshCw, Loader2, ChevronDown, ArrowUpRight } from 'lucide-react';
 import { DataTable } from '../components/DataTable';
@@ -199,7 +199,7 @@ export function InventoryPage() {
   // - distinct_products = nb de produits uniques dans la branch sélectionnée
   // - grand_total_qty   = quantité totale réelle (pas juste les 100 premières lignes)
   // - etc.
-  const { data: totalsData } = useInventoryLines(currentSnapId || null, {
+  const { data: totalsData, loading: totalsLoading } = useInventoryLines(currentSnapId || null, {
     page:      1,
     page_size: 1,
     branch:    branchParam,
@@ -236,7 +236,7 @@ export function InventoryPage() {
   const outOfStockCount    = totalsData?.totals?.out_of_stock_count ?? 0;
   const criticalCount      = totalsData?.totals?.critical_count     ?? 0;
   const lowCount           = totalsData?.totals?.low_count          ?? 0;
-  const totalLinesCount    = linesData?.count ?? 0;
+  const totalLinesCount    = totalsData?.count ?? 0;
 
   const categoryPieData = categories.slice(0, 8).map((c, i) => ({
     name: c.category || 'Uncategorized', value: toNum(c.total_value), qty: toNum(c.total_qty), fill: CATEGORY_COLORS[i % CATEGORY_COLORS.length],
@@ -272,7 +272,7 @@ export function InventoryPage() {
     { key: 'status',       label: 'Status',     render: (row: InventorySnapshotLine) => <StockStatusBadge quantity={toNum(row.quantity)} /> },
   ];
 
-  const isLoading = snapsLoading || linesLoading;
+  const isLoading = snapsLoading || linesLoading || totalsLoading;
 
   return (
     <div style={{ background: css.bg, minHeight: '100vh', padding: '32px 28px' }}>
@@ -329,9 +329,8 @@ export function InventoryPage() {
       </div>
 
       {/* KPI Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 16, marginBottom: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 16, marginBottom: 16 }}>
         <KpiCard label="Total Stock Value"  value={isLoading ? '…' : formatCurrency(totalValue)} sub={selectedBranch !== 'all' ? `Branch: ${selectedBranch}` : `Across ${allBranches.length} branch${allBranches.length !== 1 ? 'es' : ''}`} icon={Package}       accent={C.indigo} />
-        <KpiCard label="Total Products"     value={isLoading ? '…' : formatNumber(uniqueProductCount)} sub={`${formatNumber(totalLinesCount)} total lines`} icon={TrendingUp}  accent={C.cyan}   />
         <KpiCard label="Total Units"        value={isLoading ? '…' : formatNumber(totalQty)} sub="Total quantity in stock" icon={Package} accent={C.emerald} />
         <KpiCard label="Stock Alerts"       value={isLoading ? '…' : String(lowCount + outOfStockCount + criticalCount)} sub={`${outOfStockCount} out · ${criticalCount} critical · ${lowCount} low`} icon={AlertTriangle} accent={C.rose} />
       </div>

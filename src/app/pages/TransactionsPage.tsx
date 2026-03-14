@@ -372,7 +372,7 @@ export function TransactionsPage() {
   // Reset to page 1 when any filter changes
   useEffect(() => { setPage(1); }, [selectedPeriod, selectedBranch, selectedType]);
 
-  const netFlow    = grandTotalIn - grandTotalOut;
+  const netFlow    = grandTotalOut - grandTotalIn;
   const totalPages = Math.ceil(totalCount / pageSize);
 
   const isFiltered = selectedPeriod !== '12m' || selectedBranch !== 'all' || selectedType !== 'all';
