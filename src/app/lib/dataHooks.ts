@@ -30,6 +30,40 @@ import {
   type QueryParams,
 } from "./dataApi";
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Movement-type normaliser
+//
+// Some Excel files store movement types with a trailing space, e.g. 'ف بيع '
+// instead of 'ف بيع'.  When those rows reach the DB un-trimmed, any query
+// using the canonical value ('ف بيع') returns zero results, causing branches
+// to vanish from every chart.
+//
+// This helper strips all whitespace from any movement_type before it is sent
+// to the API.  It is applied in every hook that accepts a movement_type param,
+// acting as a last line of defence on the frontend side.
+//
+// The root fix is the Django data migration 0003_trim_movement_types.py which
+// cleans all existing rows in the DB, and the updated MovementsParser which
+// strips at import time.  This frontend guard ensures correctness even if a
+// stale client sends an untrimmed value.
+// ─────────────────────────────────────────────────────────────────────────────
+
+type WithMovementType = { movement_type?: string };
+
+/**
+ * Return a copy of `params` with `movement_type` trimmed of whitespace.
+ * If `params` is undefined or has no `movement_type`, it is returned unchanged.
+ */
+function normalizeMovementType<T extends WithMovementType>(
+  params?: T,
+): T | undefined {
+  if (!params) return params;
+  if (params.movement_type === undefined) return params;
+  const trimmed = params.movement_type.trim();
+  if (trimmed === params.movement_type) return params; // no change — avoid new object
+  return { ...params, movement_type: trimmed };
+}
+
 // ─────────────────────────────────────────────
 // Generic async hook
 // ─────────────────────────────────────────────
@@ -165,7 +199,12 @@ export function useTransactions(
     date_to?: string;
   },
 ) {
-  return useAsync(() => transactionsApi.list(params), [JSON.stringify(params)]);
+  // FIX: normalise movement_type before sending to API
+  const normalized = normalizeMovementType(params);
+  return useAsync(
+    () => transactionsApi.list(normalized),
+    [JSON.stringify(normalized)],
+  );
 }
 
 export function useTransactionSummary(params?: {
@@ -187,28 +226,44 @@ export function useTransactionSummary(params?: {
  *   useBranchBreakdown({ movement_type: MOVEMENT_TYPES.PURCHASE })
  *
  * If omitted, the backend defaults to the sale type.
+ *
+ * FIX: movement_type is trimmed before being sent to the API so that Excel
+ * files that stored 'ف بيع ' (with trailing space) produce the same results
+ * as files that stored 'ف بيع'.
  */
 export function useBranchBreakdown(params?: {
   movement_type?: string;
   date_from?: string;
   date_to?: string;
 }) {
+  // FIX: normalise movement_type before sending to API
+  const normalized = normalizeMovementType(params);
   return useAsync(
-    () => transactionsApi.branchBreakdown(params),
-    [JSON.stringify(params)],
+    () => transactionsApi.branchBreakdown(normalized),
+    [JSON.stringify(normalized)],
   );
 }
+
+/**
+ * Per-branch monthly revenue/profit chart data.
+ *
+ * FIX: movement_type is trimmed before being sent to the API — same reason
+ * as useBranchBreakdown above.
+ */
 export function useBranchMonthly(params?: {
   movement_type?: string;
   year?: number;
-  date_from?: string; // ← ADD
-  date_to?: string; // ← ADD
+  date_from?: string;
+  date_to?: string;
 }) {
+  // FIX: normalise movement_type before sending to API
+  const normalized = normalizeMovementType(params);
   return useAsync(
-    () => transactionsApi.branchMonthly(params),
-    [JSON.stringify(params)],
+    () => transactionsApi.branchMonthly(normalized),
+    [JSON.stringify(normalized)],
   );
 }
+
 export function useTypeBreakdown(params?: {
   date_from?: string;
   date_to?: string;

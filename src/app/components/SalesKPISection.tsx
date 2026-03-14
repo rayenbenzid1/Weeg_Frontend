@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import {
   TrendingUp, TrendingDown, ShoppingBag, Users, Clock,
-  BarChart2, ArrowUp, ArrowDown, Loader2, AlertCircle, RefreshCw,
+  BarChart2, ArrowUp, ArrowDown, Loader2, AlertCircle, RefreshCw, Info,
 } from 'lucide-react';
 import {
   BarChart, Bar, AreaChart, Area,
@@ -28,13 +28,13 @@ const C = {
 const COLORS = [C.indigo, C.cyan, C.teal, C.emerald, C.amber, C.rose, C.violet, C.orange, '#84cc16', '#ec4899'];
 
 const css = {
-  card:      'hsl(var(--card))',
-  cardFg:    'hsl(var(--card-foreground))',
-  border:    'hsl(var(--border))',
-  muted:     'hsl(var(--muted))',
-  mutedFg:   'hsl(var(--muted-foreground))',
-  bg:        'hsl(var(--background))',
-  fg:        'hsl(var(--foreground))',
+  card:    'hsl(var(--card))',
+  cardFg:  'hsl(var(--card-foreground))',
+  border:  'hsl(var(--border))',
+  muted:   'hsl(var(--muted))',
+  mutedFg: 'hsl(var(--muted-foreground))',
+  bg:      'hsl(var(--background))',
+  fg:      'hsl(var(--foreground))',
 };
 
 const cardStyle: React.CSSProperties = {
@@ -46,7 +46,6 @@ const cardStyle: React.CSSProperties = {
 };
 
 const axisStyle = { fontSize: 11, fill: 'hsl(var(--muted-foreground))' };
-const legendStyle = { fontSize: 12, color: 'hsl(var(--muted-foreground))', paddingTop: 8 };
 
 // ── Panel ──────────────────────────────────────────────────────────────────────
 function Panel({ title, sub, icon: Icon, iconAccent, children }: {
@@ -68,25 +67,30 @@ function Panel({ title, sub, icon: Icon, iconAccent, children }: {
   );
 }
 
-// ── Custom Tooltip — Dashboard style ──────────────────────────────────────────
+// ── Formula Badge ─────────────────────────────────────────────────────────────
+function FormulaBadge({ formula }: { formula: string }) {
+  return (
+    <div style={{
+      display: 'inline-flex', alignItems: 'center', gap: 6,
+      background: `${C.amber}10`, border: `1px solid ${C.amber}30`,
+      borderRadius: 8, padding: '5px 12px', marginBottom: 16,
+    }}>
+      <Info size={12} style={{ color: C.amber, flexShrink: 0 }} />
+      <span style={{ fontSize: 11, color: C.amber, fontWeight: 600 }}>{formula}</span>
+    </div>
+  );
+}
+
+// ── Custom Tooltip ────────────────────────────────────────────────────────────
 function CustomTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null;
   return (
     <div style={{
-      background:   css.card,
-      border:       `1px solid ${css.border}`,
-      borderRadius: 12,
-      padding:      '12px 16px',
-      boxShadow:    '0 8px 32px rgba(0,0,0,0.12)',
-      fontSize:     12,
-      minWidth:     220,
-      maxWidth:     300,
+      background: css.card, border: `1px solid ${css.border}`, borderRadius: 12,
+      padding: '12px 16px', boxShadow: '0 8px 32px rgba(0,0,0,0.12)',
+      fontSize: 12, minWidth: 220, maxWidth: 300,
     }}>
-      <p style={{
-        fontSize: 12, fontWeight: 700, color: css.cardFg,
-        paddingBottom: 8, borderBottom: `1px solid ${css.border}`,
-        margin: '0 0 8px 0',
-      }}>
+      <p style={{ fontSize: 12, fontWeight: 700, color: css.cardFg, paddingBottom: 8, borderBottom: `1px solid ${css.border}`, margin: '0 0 8px 0' }}>
         {label}
       </p>
       <div style={{ marginTop: 10 }}>
@@ -104,7 +108,72 @@ function CustomTooltip({ active, payload, label }: any) {
   );
 }
 
-// ── KpiStatCard — Dashboard style ──────────────────────────────────────────────
+// ── Margin Tooltip — shows formula breakdown on hover ─────────────────────────
+function MarginTooltip({ active, payload, label }: any) {
+  if (!active || !payload?.length) return null;
+  const p = payload[0]?.payload;
+  const margin = p?.margin_pct ?? 0;
+  const accentColor = margin >= 30 ? C.emerald : margin >= 15 ? C.amber : C.rose;
+  return (
+    <div style={{
+      background: css.card, border: `1px solid ${css.border}`, borderRadius: 12,
+      padding: '12px 16px', boxShadow: '0 8px 32px rgba(0,0,0,0.12)',
+      fontSize: 12, minWidth: 260, maxWidth: 320,
+    }}>
+      <p style={{ fontSize: 12, fontWeight: 700, color: css.cardFg, paddingBottom: 8, borderBottom: `1px solid ${css.border}`, margin: '0 0 10px 0', wordBreak: 'break-word', whiteSpace: 'normal' }}>
+        {label}
+      </p>
+
+      {/* Margin % */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
+        <span style={{ color: css.mutedFg }}>Gross Margin</span>
+        <span style={{ fontWeight: 700, color: accentColor }}>
+          {margin != null ? `${margin.toFixed(1)}%` : 'N/A'}
+        </span>
+      </div>
+
+      {/* Formula breakdown */}
+      <div style={{
+        background: `${C.amber}08`, border: `1px solid ${C.amber}20`,
+        borderRadius: 8, padding: '8px 10px',
+      }}>
+        <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: css.mutedFg, margin: '0 0 8px 0' }}>
+          Formula: (Sale Price − Cost Price) × Qty Sold
+        </p>
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+          <span style={{ fontSize: 11, color: css.mutedFg }}>Revenue (سعر الاخراجات × qty)</span>
+          <span style={{ fontSize: 11, fontWeight: 600, color: C.indigo }}>{formatCurrency(p?.total_revenue)}</span>
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+          <span style={{ fontSize: 11, color: css.mutedFg }}>Σ Sale Price × Qty (سعر الاخراجات)</span>
+          <span style={{ fontSize: 11, fontWeight: 600, color: css.cardFg }}>{formatCurrency(p?.total_price_out_x_qty)}</span>
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+          <span style={{ fontSize: 11, color: css.mutedFg }}>Σ Cost Price × Qty (سعر الرصيد)</span>
+          <span style={{ fontSize: 11, fontWeight: 600, color: css.cardFg }}>{formatCurrency(p?.total_balance_price_x_qty)}</span>
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+          <span style={{ fontSize: 11, color: css.mutedFg }}>Qty Sold (كمية الاخراجات)</span>
+          <span style={{ fontSize: 11, fontWeight: 600, color: css.cardFg }}>{formatNumber(p?.total_qty)}</span>
+        </div>
+
+        <div style={{
+          display: 'flex', justifyContent: 'space-between',
+          borderTop: `1px solid ${css.border}`, paddingTop: 6, marginTop: 4,
+        }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: css.mutedFg }}>Gross Profit</span>
+          <span style={{ fontSize: 11, fontWeight: 700, color: accentColor }}>{formatCurrency(p?.total_profit)}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── KpiStatCard ───────────────────────────────────────────────────────────────
 function KpiStatCard({ label, value, sub, icon: Icon, accent, trend }: {
   label: string; value: string; sub?: string;
   icon: React.ElementType; accent: string;
@@ -119,8 +188,7 @@ function KpiStatCard({ label, value, sub, icon: Icon, accent, trend }: {
         </div>
         {trend && (
           <div style={{
-            display: 'flex', alignItems: 'center', gap: 3,
-            fontSize: 10, fontWeight: 700,
+            display: 'flex', alignItems: 'center', gap: 3, fontSize: 10, fontWeight: 700,
             color: trend.isUp ? C.emerald : C.rose,
             background: trend.isUp ? `${C.emerald}12` : `${C.rose}12`,
             border: `1px solid ${trend.isUp ? C.emerald : C.rose}25`,
@@ -142,7 +210,7 @@ function KpiStatCard({ label, value, sub, icon: Icon, accent, trend }: {
   );
 }
 
-// ── Year selector button — UNCHANGED ──────────────────────────────────────────
+// ── Year button ───────────────────────────────────────────────────────────────
 function YearBtn({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
     <button onClick={onClick} style={{
@@ -179,6 +247,18 @@ export function SalesKPISection() {
   const margins     = data?.product_margins.filter(p => p.margin_pct !== undefined).slice(0, 10) ?? [];
   const velocity    = data?.sales_velocity;
 
+  // Prepare margin chart data — includes formula components for tooltip
+  const marginChartData = margins.map(p => ({
+    name:              p.material_name.slice(0, 18),
+    revenue:           p.total_revenue,
+    total_revenue:     p.total_revenue,  
+    total_profit:      p.total_profit      ?? 0,
+    margin_pct:        p.margin_pct        ?? 0,
+    total_qty:         p.total_qty         ?? 0,
+    total_price_out_x_qty:     p.total_price_out_x_qty     ?? 0,
+    total_balance_price_x_qty: p.total_balance_price_x_qty ?? 0, 
+  }));
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
@@ -204,7 +284,7 @@ export function SalesKPISection() {
             width: 34, height: 34, borderRadius: 8,
             border: `1px solid ${css.border}`, background: css.card,
             color: css.cardFg, cursor: loading ? 'not-allowed' : 'pointer',
-            opacity: loading ? 0.6 : 1, boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+            opacity: loading ? 0.6 : 1,
           }}>
             {loading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
           </button>
@@ -229,36 +309,36 @@ export function SalesKPISection() {
 
       {!loading && !error && data && (
         <>
-          {/* KPI Summary Cards — Dashboard style */}
+          {/* KPI Summary Cards */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 16 }}>
             <KpiStatCard
-              label="Total Revenue (CA)" value={formatCurrency(caTotal)} sub={`vs ${formatCurrency(caPrevious)} prev. year`}
+              label="Total Revenue" value={formatCurrency(caTotal)} sub={`vs ${formatCurrency(caPrevious)} prev. year`}
               icon={TrendingUp} accent={C.indigo}
               trend={caPrevious > 0 ? { value: Math.abs(salesEvolutionValue), isUp: salesEvolutionIsUp } : null}
             />
             <KpiStatCard
-              label="Sales Evolution" value={hasSalesEvolution ? `${salesEvolutionIsUp ? '+' : ''}${salesEvolutionValue.toFixed(1)}%` : 'N/A'} sub={salesEvolutionDesc}
+              label="Sales Evolution" value={hasSalesEvolution ? `${salesEvolutionIsUp ? '+' : ''}${salesEvolutionValue.toFixed(1)}%` : 'N/A'}
+              sub={salesEvolutionDesc}
               icon={!hasSalesEvolution ? Clock : salesEvolutionIsUp ? TrendingUp : TrendingDown}
               accent={!hasSalesEvolution ? '#64748b' : salesEvolutionIsUp ? C.emerald : C.rose}
             />
             <KpiStatCard
-              label="Top Profitable Product" value={topProducts[0] ? `${topProducts[0].material_name.slice(0, 24)}` : 'No data'}
+              label="Top Product" value={topProducts[0] ? topProducts[0].material_name.slice(0, 24) : 'No data'}
               icon={ShoppingBag} accent={C.violet}
             />
             <KpiStatCard
-              label="Avg Daily Sales" value={formatCurrency(velocity?.avg_daily_revenue ?? 0)}
+              label="Avg Daily Revenue" value={formatCurrency(velocity?.avg_daily_revenue ?? 0)}
               sub={velocity ? `Over ${velocity.n_days} days · ${formatNumber(velocity.avg_daily_qty)} units/day` : ''}
               icon={Clock} accent={C.amber}
             />
           </div>
 
-          {/* Monthly Revenue Trend — Dashboard style */}
+          {/* Monthly Revenue Trend */}
           {monthlyChartData.length > 0 && (
             <Panel title={`Monthly Revenue — ${year}`} sub="Revenue trend by month" icon={TrendingUp} iconAccent={C.indigo}>
               <ResponsiveContainer width="100%" height={260}>
                 <AreaChart data={monthlyChartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                   <defs>
-                    {/* 3-stop gradient — Dashboard style */}
                     <linearGradient id="salesGrad" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="0%"   stopColor={C.indigo} stopOpacity={0.28} />
                       <stop offset="55%"  stopColor={C.indigo} stopOpacity={0.08} />
@@ -268,33 +348,20 @@ export function SalesKPISection() {
                   <CartesianGrid stroke={css.border} strokeWidth={1} vertical={false} />
                   <XAxis dataKey="month" tick={axisStyle} axisLine={false} tickLine={false} dy={6} />
                   <YAxis tick={axisStyle} axisLine={false} tickLine={false} tickFormatter={v => `${(v/1000).toFixed(0)}k`} tickCount={5} width={36} />
-                  <RechartsTooltip
-                    content={<CustomTooltip />}
-                    cursor={{ stroke: 'hsl(var(--muted-foreground))', strokeWidth: 1, strokeDasharray: '4 3' }}
-                  />
-                  <Area
-                    type="natural"
-                    dataKey="revenue"
-                    stroke={C.indigo}
-                    strokeWidth={2.5}
-                    fill="url(#salesGrad)"
-                    name="Revenue"
-                    dot={false}
-                    activeDot={{ r: 5, fill: css.card, stroke: C.indigo, strokeWidth: 2.5 }}
-                  />
+                  <RechartsTooltip content={<CustomTooltip />} cursor={{ stroke: 'hsl(var(--muted-foreground))', strokeWidth: 1, strokeDasharray: '4 3' }} />
+                  <Area type="natural" dataKey="revenue" stroke={C.indigo} strokeWidth={2.5} fill="url(#salesGrad)" name="Revenue" dot={false} activeDot={{ r: 5, fill: css.card, stroke: C.indigo, strokeWidth: 2.5 }} />
                 </AreaChart>
               </ResponsiveContainer>
             </Panel>
           )}
 
-          {/* Top Products + Top Clients — Dashboard style for charts */}
+          {/* Top Products + Top Clients */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-
             {topProducts.length > 0 && (
               <Panel title="Top Products by Revenue" sub={`Top ${topProducts.length} products · ${year}`} icon={ShoppingBag} iconAccent={C.indigo}>
                 <ResponsiveContainer width="100%" height={280}>
                   <BarChart
-                    data={topProducts.map(p => ({ name: p.material_name.slice(0, 18), revenue: p.total_revenue, share: p.revenue_share }))}
+                    data={topProducts.map(p => ({ name: p.material_name.slice(0, 18), revenue: p.total_revenue }))}
                     layout="vertical" barCategoryGap="30%" barGap={4}
                     margin={{ top: 4, right: 8, left: 0, bottom: 0 }}
                   >
@@ -346,48 +413,109 @@ export function SalesKPISection() {
             )}
           </div>
 
-          {/* Product Margins — UNCHANGED logic, progress bar updated */}
+          {/* Product Margins — with formula badge + breakdown tooltip */}
           {margins.length > 0 && (
-            <Panel title="Product Margins" sub="Gross margin % per product (estimated from purchase cost data)" icon={BarChart2} iconAccent={C.amber}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {margins.map((p, i) => {
-                  const margin = p.margin_pct ?? 0;
-                  const accent = margin >= 30 ? C.emerald : margin >= 15 ? C.amber : C.rose;
-                  return (
-                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                      <p style={{ fontSize: 12, fontWeight: 500, color: css.cardFg, margin: 0, width: 200, flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {p.material_name.slice(0, 28)}
-                      </p>
-                      <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <div style={{ flex: 1, height: 5, borderRadius: 999, background: css.muted, overflow: 'hidden', boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.06)' }}>
-                          <div style={{ height: '100%', borderRadius: 999, width: `${Math.min(100, Math.max(0, margin))}%`, background: `linear-gradient(90deg, ${accent}65, ${accent})`, transition: 'width 0.6s cubic-bezier(0.4,0,0.2,1)' }} />
-                        </div>
-                        <span style={{ fontSize: 12, fontWeight: 700, color: accent, width: 48, textAlign: 'right', flexShrink: 0 }}>{margin.toFixed(1)}%</span>
-                      </div>
-                      <span style={{ fontSize: 11, color: css.mutedFg, width: 110, textAlign: 'right', flexShrink: 0 }}>{formatCurrency(p.total_revenue)}</span>
+            <Panel
+              title="Product Margins"
+              sub="Gross margin % per product · Hover a bar for formula breakdown"
+              icon={BarChart2}
+              iconAccent={C.amber}
+            >
+              {/* Formula badge */}
+              <FormulaBadge formula="Gross Profit = (Sale Price − Cost Price) × Qty Sold  ·  Margin % = Gross Profit ÷ Revenue × 100" />
+
+              {/* Bar chart — replaces the old progress bars, shows margin % with tooltip */}
+              {marginChartData.length > 0 && (
+                <ResponsiveContainer width="100%" height={Math.max(200, marginChartData.length * 28)}>
+                  <BarChart
+                    data={marginChartData}
+                    layout="vertical"
+                    barCategoryGap="30%"
+                    margin={{ top: 4, right: 60, left: 0, bottom: 0 }}
+                  >
+                    <defs>
+                      {marginChartData.map((d, i) => {
+                        const accent = d.margin_pct >= 30 ? C.emerald : d.margin_pct >= 15 ? C.amber : C.rose;
+                        return (
+                          <linearGradient key={i} id={`mg-${i}`} x1="1" y1="0" x2="0" y2="0">
+                            <stop offset="0%"   stopColor={accent} stopOpacity={1}    />
+                            <stop offset="100%" stopColor={accent} stopOpacity={0.55} />
+                          </linearGradient>
+                        );
+                      })}
+                    </defs>
+                    <CartesianGrid stroke={css.border} strokeWidth={1} horizontal={false} />
+                    <XAxis
+                      type="number"
+                      tick={axisStyle}
+                      axisLine={false}
+                      tickLine={false}
+                      tickFormatter={v => `${v.toFixed(0)}%`}
+                      domain={[0, 'dataMax + 5']}
+                    />
+                    <YAxis
+                      type="category"
+                      dataKey="name"
+                      tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }}
+                      width={130}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    {/* Use MarginTooltip for formula breakdown */}
+                    <RechartsTooltip content={<MarginTooltip />} cursor={{ fill: 'rgba(245,158,11,0.05)' }} />
+                    <Bar dataKey="margin_pct" name="Gross Margin %" radius={[0, 5, 5, 0]} maxBarSize={22}
+                      label={{ position: 'right', fontSize: 11, fontWeight: 700, formatter: (v: number) => `${v.toFixed(1)}%` }}
+                    >
+                      {marginChartData.map((d, i) => {
+                        const accent = d.margin_pct >= 30 ? C.emerald : d.margin_pct >= 15 ? C.amber : C.rose;
+                        return <Cell key={i} fill={`url(#mg-${i})`} />;
+                      })}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+
+              {/* Summary row — total gross profit */}
+              {marginChartData.length > 0 && (() => {
+                const totalProfit  = marginChartData.reduce((s, p) => s + p.total_profit,  0);
+                const totalRevenue = marginChartData.reduce((s, p) => s + p.revenue,        0);
+                const avgMargin    = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
+                const accentColor  = avgMargin >= 30 ? C.emerald : avgMargin >= 15 ? C.amber : C.rose;
+                return (
+                  <div style={{
+                    display: 'flex', justifyContent: 'flex-end', gap: 24,
+                    marginTop: 16, paddingTop: 12, borderTop: `1px solid ${css.border}`,
+                  }}>
+                    <div style={{ textAlign: 'right' }}>
+                      <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: css.mutedFg, margin: 0 }}>Total Gross Profit</p>
+                      <p style={{ fontSize: 15, fontWeight: 800, color: accentColor, margin: 0 }}>{formatCurrency(totalProfit)}</p>
                     </div>
-                  );
-                })}
-              </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: css.mutedFg, margin: 0 }}>Avg Margin</p>
+                      <p style={{ fontSize: 15, fontWeight: 800, color: accentColor, margin: 0 }}>{avgMargin.toFixed(1)}%</p>
+                    </div>
+                  </div>
+                );
+              })()}
             </Panel>
           )}
 
-          {/* Sales Velocity — UNCHANGED */}
+          {/* Sales Velocity */}
           {(velocity?.by_product?.length ?? 0) > 0 && (
             <Panel title="Sales Velocity — Days to Sell 100 Units" sub={`Faster products sell first · ${velocity!.n_days} days period`} icon={Clock} iconAccent={C.violet}>
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
                   <thead>
                     <tr style={{ borderBottom: `1px solid ${css.border}` }}>
-                      {['Product', 'Avg Qty/Day', 'Avg Revenue/Day', 'Days to sell 100'].map((h, i) => (
+                      {['Product', 'Avg Qty/Day', 'Avg Revenue/Day', 'Days to Sell 100'].map((h, i) => (
                         <th key={i} style={{ padding: '8px 0', fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: css.mutedFg, textAlign: i === 0 ? 'left' : 'right' }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     {velocity!.by_product.slice(0, 10).map((p, i) => {
-                      const fast = p.days_to_sell_100 <= 30;
-                      const mid  = p.days_to_sell_100 <= 90;
+                      const fast        = p.days_to_sell_100 <= 30;
+                      const mid         = p.days_to_sell_100 <= 90;
                       const badgeAccent = fast ? C.indigo : mid ? C.amber : '#94a3b8';
                       return (
                         <tr key={i} style={{ borderBottom: `1px solid ${css.border}` }}>

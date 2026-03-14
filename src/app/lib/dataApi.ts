@@ -749,6 +749,8 @@ export interface SalesKPIProduct {
   margin_pct?: number; // only in product_margins array
   rotation_rate?: number;
   coverage_days?: number;
+  total_price_out_x_qty?:       number;  // ✅ ajouter
+  total_balance_price_x_qty?:   number;  // ✅ ajouter
 }
 
 export interface SalesKPIClient {
@@ -789,6 +791,8 @@ interface SalesKPIRawProduct {
   margin_pct?: number | string;
   rotation_rate?: number | string;
   coverage_days?: number | string | null;
+  total_price_out_x_qty?:       number | string; 
+  total_balance_price_x_qty?:   number | string;
 }
 
 interface SalesKPIRawClient {
@@ -871,6 +875,8 @@ export interface SalesKPIData {
     n_days: number;
     by_product: SalesVelocityProduct[];
   };
+  avg_price_out?:     number;
+  avg_balance_price?: number;
 }
 
 function normalizeSalesProduct(product: SalesKPIRawProduct): SalesKPIProduct {
@@ -897,6 +903,12 @@ function normalizeSalesProduct(product: SalesKPIRawProduct): SalesKPIProduct {
       product.coverage_days === null || product.coverage_days === undefined
         ? undefined
         : toFiniteNumber(product.coverage_days, 0),
+    total_price_out_x_qty:     product.total_price_out_x_qty !== undefined
+                             ? toFiniteNumber(product.total_price_out_x_qty, 0)
+                             : undefined,   // ✅ ajouter
+    total_balance_price_x_qty: product.total_balance_price_x_qty !== undefined
+                             ? toFiniteNumber(product.total_balance_price_x_qty, 0)
+                             : undefined,
   };
 }
 
@@ -999,6 +1011,10 @@ export interface StockKPIProduct {
   revenue: number;
   rotation_rate: number;
   coverage_days: number | null;
+  // rotation_rate = qty_sold / (qty_opening + qty_purchased)
+  qty_opening: number;    // ف.أول المدة — opening balance qty
+  qty_purchased: number;  // ف شراء      — purchased qty during the year
+  denominator: number;    // qty_opening + qty_purchased (the divisor)
 }
 
 interface StockKPIRawProduct {
@@ -1012,11 +1028,15 @@ interface StockKPIRawProduct {
   revenue?: number | string;
   rotation_rate?: number | string;
   coverage_days?: number | string | null;
+  qty_opening?: number | string;
+  qty_purchased?: number | string;
+  denominator?: number | string;
 }
 
 interface StockKPIRawData {
   snapshot_date?: string | null;
   year?: number;
+  rotation_formula?: string; 
   stock_summary?: {
     total_products?: number;
     total_qty?: number;
@@ -1037,6 +1057,7 @@ interface StockKPIRawData {
 export interface StockKPIData {
   snapshot_date: string | null;
   year: number;
+  rotation_formula: string;
   stock_summary: {
     total_products: number;
     total_qty: number;
@@ -1077,6 +1098,9 @@ function normalizeStockKPIProduct(
     revenue: toFiniteNumber(product.revenue, 0),
     rotation_rate: toFiniteNumber(product.rotation_rate, 0),
     coverage_days: coverageDays,
+    qty_opening:    toFiniteNumber(product.qty_opening,   0),
+    qty_purchased:  toFiniteNumber(product.qty_purchased, 0),
+    denominator:    toFiniteNumber(product.denominator,   0),
   };
 }
 
@@ -1086,6 +1110,7 @@ function normalizeStockKPIData(raw: StockKPIRawData): StockKPIData {
   return {
     snapshot_date: raw.snapshot_date ?? null,
     year: raw.year ?? new Date().getFullYear(),
+    rotation_formula: raw.rotation_formula ?? "qty_sold / (stock_initial + achats)",
     stock_summary: {
       total_products: toFiniteNumber(summary.total_products, 0),
       total_qty: toFiniteNumber(
